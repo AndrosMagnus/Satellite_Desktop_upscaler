@@ -92,8 +92,14 @@ class SideBySideComparison(QtWidgets.QWidget):
         layout.addWidget(before_column, 1)
         layout.addWidget(after_column, 1)
 
+        self.before_title = before_title
+        self.after_title = after_title
         self.before_viewer = before_viewer
         self.after_viewer = after_viewer
+
+    def set_titles(self, before_text: str, after_text: str) -> None:
+        self.before_title.setText(before_text)
+        self.after_title.setText(after_text)
 
     def set_before_image(self, image: QtGui.QImage | None) -> None:
         if image is None:
@@ -256,6 +262,9 @@ class ComparisonViewer(QtWidgets.QWidget):
         self.set_before_placeholder("Preview will appear here")
         self.set_after_placeholder("Upscaled preview will appear here")
 
+    def set_titles(self, before_text: str, after_text: str) -> None:
+        self.side_by_side.set_titles(before_text, after_text)
+
     def set_before_image(self, image: QtGui.QImage | None) -> None:
         if image is None:
             self.set_before_placeholder("Preview will appear here")
@@ -278,6 +287,8 @@ class ComparisonViewer(QtWidgets.QWidget):
         self.side_by_side.set_after_placeholder(text)
         if self.swipe.view.has_before_image():
             self.swipe.view.set_after_image(None)
+
+
 class InputListWidget(QtWidgets.QListWidget):
     placeholder_text = "Drop files or folders here to begin."
     paths_added = QtCore.Signal(list)
@@ -614,11 +625,144 @@ class AdvancedOptionsPanel(CollapsiblePanel):
         self.seam_blend_check = seam_blend_check
 
 
+class ModelComparisonPanel(QtWidgets.QGroupBox):
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__("Model Comparison", parent)
+        self.setObjectName("modelComparisonPanel")
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setSpacing(6)
+
+        mode_row = QtWidgets.QWidget()
+        mode_row_layout = QtWidgets.QHBoxLayout(mode_row)
+        mode_row_layout.setContentsMargins(0, 0, 0, 0)
+        mode_label = QtWidgets.QLabel("Mode")
+        mode_combo = QtWidgets.QComboBox()
+        mode_combo.setObjectName("comparisonModeCombo")
+        mode_combo.addItems(["Standard", "Model comparison"])
+        mode_row_layout.addWidget(mode_label)
+        mode_row_layout.addWidget(mode_combo, 1)
+
+        model_a_row = QtWidgets.QWidget()
+        model_a_row_layout = QtWidgets.QHBoxLayout(model_a_row)
+        model_a_row_layout.setContentsMargins(0, 0, 0, 0)
+        model_a_label = QtWidgets.QLabel("Model A")
+        model_a_combo = QtWidgets.QComboBox()
+        model_a_combo.setObjectName("comparisonModelACombo")
+        model_a_row_layout.addWidget(model_a_label)
+        model_a_row_layout.addWidget(model_a_combo, 1)
+
+        model_b_row = QtWidgets.QWidget()
+        model_b_row_layout = QtWidgets.QHBoxLayout(model_b_row)
+        model_b_row_layout.setContentsMargins(0, 0, 0, 0)
+        model_b_label = QtWidgets.QLabel("Model B")
+        model_b_combo = QtWidgets.QComboBox()
+        model_b_combo.setObjectName("comparisonModelBCombo")
+        model_b_row_layout.addWidget(model_b_label)
+        model_b_row_layout.addWidget(model_b_combo, 1)
+
+        layout.addWidget(mode_row)
+        layout.addWidget(model_a_row)
+        layout.addWidget(model_b_row)
+
+        self.mode_combo = mode_combo
+        self.model_a_combo = model_a_combo
+        self.model_b_combo = model_b_combo
+        self._models_available = False
+        self._load_models()
+        self._apply_mode(mode_combo.currentText())
+
+        mode_combo.currentTextChanged.connect(self._apply_mode)
+
+    def _load_models(self) -> None:
+        model_names = self._load_model_names()
+        self.model_a_combo.clear()
+        self.model_b_combo.clear()
+        if not model_names:
+            self.model_a_combo.addItem("No models available")
+            self.model_b_combo.addItem("None")
+            self.model_a_combo.setEnabled(False)
+            self.model_b_combo.setEnabled(False)
+            self._models_available = False
+            return
+
+        self._models_available = True
+        self.model_a_combo.addItems(model_names)
+        self.model_b_combo.addItems(["None", *model_names])
+
+    def _load_model_names(self) -> list[str]:
+        repo_root = os.path.dirname(os.path.dirname(__file__))
+        registry_path = os.path.join(repo_root, "models", "registry.json")
+        try:
+            with open(registry_path, "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+        except (OSError, json.JSONDecodeError):
+            return []
+        if not isinstance(data, list):
+            return []
+        names: list[str] = []
+        for entry in data:
+            if not isinstance(entry, dict):
+                continue
+            name = entry.get("name")
+            if isinstance(name, str) and name:
+                names.append(name)
+        return names
+
+    def _apply_mode(self, mode: str) -> None:
+        comparison = mode == "Model comparison"
+        if not self._models_available:
+            self.model_a_combo.setEnabled(False)
+            self.model_b_combo.setEnabled(False)
+            return
+        self.model_a_combo.setEnabled(comparison)
+        self.model_b_combo.setEnabled(comparison)
+
+    def is_comparison_mode(self) -> bool:
+        return self.mode_combo.currentText() == "Model comparison"
+
+    def selected_model_a(self) -> str | None:
+        if not self._models_available:
+            return None
+        return self.model_a_combo.currentText()
+
+    def selected_model_b(self) -> str | None:
+        if not self._models_available:
+            return None
+        selection = self.model_b_combo.currentText()
+        if selection == "None":
+            return None
+        return selection
+
+    def comparison_labels(self) -> tuple[str, str]:
+        if not self.is_comparison_mode():
+            return ("Before", "After")
+        model_a = self.selected_model_a()
+        model_b = self.selected_model_b()
+        before_label = "Model A"
+        if model_a:
+            before_label = f"Model A: {model_a}"
+        after_label = "Model B (optional)"
+        if model_b:
+            after_label = f"Model B: {model_b}"
+        return (before_label, after_label)
+
+    def placeholder_texts(self) -> tuple[str, str]:
+        if not self.is_comparison_mode():
+            return ("Preview will appear here", "Upscaled preview will appear here")
+        before_text = "Model output will appear here"
+        after_text = "Model output will appear here"
+        if self.selected_model_b() is None:
+            after_text = "Select a second model to compare."
+        return (before_text, after_text)
+
+
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Satellite Upscale")
         self._build_ui()
+        self._current_preview_image: QtGui.QImage | None = None
+        self._update_comparison_state()
 
     def _build_ui(self) -> None:
         splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
@@ -663,6 +807,8 @@ class MainWindow(QtWidgets.QMainWindow):
         comparison_viewer = ComparisonViewer()
         comparison_viewer.setObjectName("comparisonViewer")
         preview_layout.addWidget(comparison_viewer)
+
+        model_comparison_panel = ModelComparisonPanel()
 
         metadata_group = QtWidgets.QGroupBox("Metadata")
         metadata_group.setObjectName("metadataGroup")
@@ -731,6 +877,7 @@ class MainWindow(QtWidgets.QMainWindow):
         workflow_layout.addStretch(1)
 
         right_layout.addWidget(preview_group)
+        right_layout.addWidget(model_comparison_panel)
         right_layout.addWidget(metadata_group)
         right_layout.addWidget(workflow_group)
         advanced_options_panel = AdvancedOptionsPanel()
@@ -756,6 +903,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.add_files_button = add_files_button
         self.add_folder_button = add_folder_button
         self.comparison_viewer = comparison_viewer
+        self.model_comparison_panel = model_comparison_panel
         self.metadata_summary = metadata_summary
         self.metadata_value_labels = metadata_value_labels
         self.workflow_group = workflow_group
@@ -768,6 +916,15 @@ class MainWindow(QtWidgets.QMainWindow):
         add_folder_button.clicked.connect(self._select_folder)
         input_list.itemSelectionChanged.connect(self._handle_selection_change)
         input_list.paths_added.connect(self._select_latest_added)
+        model_comparison_panel.mode_combo.currentTextChanged.connect(
+            self._update_comparison_state
+        )
+        model_comparison_panel.model_a_combo.currentTextChanged.connect(
+            self._update_comparison_state
+        )
+        model_comparison_panel.model_b_combo.currentTextChanged.connect(
+            self._update_comparison_state
+        )
 
     def _select_files(self) -> None:
         files, _ = QtWidgets.QFileDialog.getOpenFileNames(
@@ -799,6 +956,36 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.input_list.scrollToItem(self.input_list.item(index))
                 break
 
+    def _update_comparison_state(self) -> None:
+        before_label, after_label = self.model_comparison_panel.comparison_labels()
+        self.comparison_viewer.set_titles(before_label, after_label)
+
+        if not self.model_comparison_panel.is_comparison_mode():
+            if self._current_preview_image is None:
+                self.comparison_viewer.set_before_placeholder("Preview will appear here")
+            else:
+                self.comparison_viewer.set_before_image(self._current_preview_image)
+            self.comparison_viewer.set_after_placeholder("Upscaled preview will appear here")
+            return
+
+        before_placeholder, after_placeholder = (
+            self.model_comparison_panel.placeholder_texts()
+        )
+        if self._current_preview_image is None:
+            self.comparison_viewer.set_before_placeholder(before_placeholder)
+            self.comparison_viewer.set_after_placeholder(after_placeholder)
+            return
+
+        if self.model_comparison_panel.selected_model_a() is None:
+            self.comparison_viewer.set_before_placeholder(before_placeholder)
+        else:
+            self.comparison_viewer.set_before_image(self._current_preview_image)
+
+        if self.model_comparison_panel.selected_model_b() is None:
+            self.comparison_viewer.set_after_placeholder(after_placeholder)
+        else:
+            self.comparison_viewer.set_after_image(self._current_preview_image)
+
     def _handle_selection_change(self) -> None:
         items = self.input_list.selectedItems()
         if len(items) != 1:
@@ -806,17 +993,20 @@ class MainWindow(QtWidgets.QMainWindow):
             if not items:
                 message = "Select a file to see metadata."
             elif len(items) > 1:
-                message = "Multiple items selected."
-            self.comparison_viewer.set_before_placeholder("Preview will appear here")
-            self.comparison_viewer.set_after_placeholder("Upscaled preview will appear here")
+                if self.model_comparison_panel.is_comparison_mode():
+                    message = "Model comparison requires a single image."
+                else:
+                    message = "Multiple items selected."
+            self._current_preview_image = None
+            self._update_comparison_state()
             self.metadata_summary.setText(message)
             self._set_metadata_placeholders()
             return
 
         selected_path = items[0].text()
         if selected_path == self.input_list.placeholder_text:
-            self.comparison_viewer.set_before_placeholder("Preview will appear here")
-            self.comparison_viewer.set_after_placeholder("Upscaled preview will appear here")
+            self._current_preview_image = None
+            self._update_comparison_state()
             self.metadata_summary.setText("Select a file to see metadata.")
             self._set_metadata_placeholders()
             return
@@ -825,18 +1015,41 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _load_preview_and_metadata(self, path: str) -> None:
         if not os.path.exists(path):
-            self.comparison_viewer.set_before_placeholder("Preview unavailable for this file.")
-            self.comparison_viewer.set_after_placeholder("Upscaled preview will appear here")
+            self._current_preview_image = None
+            if self.model_comparison_panel.is_comparison_mode():
+                self.comparison_viewer.set_before_placeholder(
+                    "Preview unavailable for this file."
+                )
+                self.comparison_viewer.set_after_placeholder(
+                    "Preview unavailable for this file."
+                )
+            else:
+                self.comparison_viewer.set_before_placeholder(
+                    "Preview unavailable for this file."
+                )
+                self.comparison_viewer.set_after_placeholder("Upscaled preview will appear here")
             self.metadata_summary.setText("File not found.")
             self._set_metadata_placeholders()
             return
 
         image = self._read_image(path)
         if image is None:
-            self.comparison_viewer.set_before_placeholder("No preview available for this file.")
+            self._current_preview_image = None
+            if self.model_comparison_panel.is_comparison_mode():
+                self.comparison_viewer.set_before_placeholder(
+                    "No preview available for this file."
+                )
+                self.comparison_viewer.set_after_placeholder(
+                    "No preview available for this file."
+                )
+            else:
+                self.comparison_viewer.set_before_placeholder(
+                    "No preview available for this file."
+                )
+                self.comparison_viewer.set_after_placeholder("Upscaled preview will appear here")
         else:
-            self.comparison_viewer.set_before_image(image)
-        self.comparison_viewer.set_after_placeholder("Upscaled preview will appear here")
+            self._current_preview_image = image
+            self._update_comparison_state()
         metadata = self._build_metadata(path)
         filename = metadata.get("Filename", os.path.basename(path))
         self.metadata_summary.setText(f"Metadata for {filename}")

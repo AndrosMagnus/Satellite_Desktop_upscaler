@@ -95,6 +95,31 @@ class TestPrimaryLayout(unittest.TestCase):
         self.assertIsNotNone(status_item)
         self.assertEqual(status_item.text(), "Bundled")
 
+    def test_model_comparison_panel(self) -> None:
+        from app.ui import MainWindow, ModelComparisonPanel
+
+        window = MainWindow()
+        panel = window.model_comparison_panel
+        self.assertIsInstance(panel, ModelComparisonPanel)
+        self.assertEqual(panel.objectName(), "modelComparisonPanel")
+        self.assertEqual(panel.mode_combo.objectName(), "comparisonModeCombo")
+        self.assertEqual(panel.model_a_combo.objectName(), "comparisonModelACombo")
+        self.assertEqual(panel.model_b_combo.objectName(), "comparisonModelBCombo")
+        self.assertEqual(panel.mode_combo.currentText(), "Standard")
+        self.assertFalse(panel.model_a_combo.isEnabled())
+        self.assertFalse(panel.model_b_combo.isEnabled())
+
+        panel.mode_combo.setCurrentText("Model comparison")
+        self.assertTrue(panel.model_a_combo.isEnabled())
+        self.assertTrue(panel.model_b_combo.isEnabled())
+        self.assertEqual(panel.model_b_combo.itemText(0), "None")
+        self.assertTrue(
+            window.comparison_viewer.side_by_side.before_title.text().startswith("Model A")
+        )
+        self.assertTrue(
+            window.comparison_viewer.side_by_side.after_title.text().startswith("Model B")
+        )
+
     def test_advanced_options_panel(self) -> None:
         from app.ui import AdvancedOptionsPanel, MainWindow
 
