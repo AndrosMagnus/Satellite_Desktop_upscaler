@@ -168,6 +168,43 @@ class TestRecommendationEngine(unittest.TestCase):
             )
         )
 
+    def test_safe_mode_forces_cpu_and_conservative_defaults(self) -> None:
+        scene = SceneMetadata(provider="PlanetScope", band_count=3, resolution_m=3.0)
+        hardware = HardwareProfile(gpu_available=True, vram_gb=10, ram_gb=32)
+        overrides = ModelOverrides(safe_mode=True)
+
+        recommendation = recommend_model_with_overrides(scene, hardware, overrides)
+
+        self.assertEqual(recommendation.scale, 2)
+        self.assertTrue(recommendation.tiling)
+        self.assertEqual(recommendation.precision, "fp32")
+        self.assertTrue(
+            any("Safe mode enabled" in warning for warning in recommendation.warnings)
+        )
+        self.assertTrue(
+            any(
+                "Compute override set to CPU" in warning
+                for warning in recommendation.warnings
+            )
+        )
+
+    def test_safe_mode_ignores_advanced_overrides(self) -> None:
+        scene = SceneMetadata(provider="PlanetScope", band_count=3, resolution_m=3.0)
+        hardware = HardwareProfile(gpu_available=True, vram_gb=10, ram_gb=32)
+        overrides = ModelOverrides(
+            scale=4,
+            tiling=False,
+            precision="fp16",
+            compute_mode="GPU",
+            safe_mode=True,
+        )
+
+        recommendation = recommend_model_with_overrides(scene, hardware, overrides)
+
+        self.assertEqual(recommendation.scale, 2)
+        self.assertTrue(recommendation.tiling)
+        self.assertEqual(recommendation.precision, "fp32")
+
 
 if __name__ == "__main__":
     unittest.main()

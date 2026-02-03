@@ -662,6 +662,11 @@ class AdvancedOptionsPanel(CollapsiblePanel):
         content_layout.setContentsMargins(12, 0, 12, 0)
         content_layout.setSpacing(8)
 
+        safe_mode_check = QtWidgets.QCheckBox(
+            "Safe mode (CPU-only, conservative defaults)"
+        )
+        safe_mode_check.setObjectName("safeModeCheck")
+
         scale_combo = QtWidgets.QComboBox()
         scale_combo.setObjectName("advancedScaleCombo")
         scale_combo.addItems(["2x", "4x", "8x"])
@@ -686,6 +691,7 @@ class AdvancedOptionsPanel(CollapsiblePanel):
         )
         completion_notification_check.setObjectName("advancedCompletionNotifyCheck")
 
+        content_layout.addRow("", safe_mode_check)
         content_layout.addRow("Scale factor", scale_combo)
         content_layout.addRow("Tiling strategy", tiling_combo)
         content_layout.addRow("Precision", precision_combo)
@@ -699,6 +705,52 @@ class AdvancedOptionsPanel(CollapsiblePanel):
         self.compute_combo = compute_combo
         self.seam_blend_check = seam_blend_check
         self.completion_notification_check = completion_notification_check
+        self.safe_mode_check = safe_mode_check
+        self._safe_mode_previous: dict[str, object] | None = None
+
+        safe_mode_check.toggled.connect(self._apply_safe_mode_state)
+
+    def _apply_safe_mode_state(self, enabled: bool) -> None:
+        advanced_controls = [
+            self.scale_combo,
+            self.tiling_combo,
+            self.precision_combo,
+            self.compute_combo,
+            self.seam_blend_check,
+        ]
+
+        if enabled:
+            self._safe_mode_previous = {
+                "scale": self.scale_combo.currentText(),
+                "tiling": self.tiling_combo.currentText(),
+                "precision": self.precision_combo.currentText(),
+                "compute": self.compute_combo.currentText(),
+                "seam_blend": self.seam_blend_check.isChecked(),
+            }
+            if self.scale_combo.findText("2x") >= 0:
+                self.scale_combo.setCurrentText("2x")
+            if self.tiling_combo.findText("512 px") >= 0:
+                self.tiling_combo.setCurrentText("512 px")
+            if self.precision_combo.findText("FP32") >= 0:
+                self.precision_combo.setCurrentText("FP32")
+            if self.compute_combo.findText("CPU") >= 0:
+                self.compute_combo.setCurrentText("CPU")
+            self.seam_blend_check.setChecked(False)
+            for control in advanced_controls:
+                control.setEnabled(False)
+            return
+
+        if self._safe_mode_previous:
+            self.scale_combo.setCurrentText(str(self._safe_mode_previous["scale"]))
+            self.tiling_combo.setCurrentText(str(self._safe_mode_previous["tiling"]))
+            self.precision_combo.setCurrentText(str(self._safe_mode_previous["precision"]))
+            self.compute_combo.setCurrentText(str(self._safe_mode_previous["compute"]))
+            self.seam_blend_check.setChecked(
+                bool(self._safe_mode_previous["seam_blend"])
+            )
+            self._safe_mode_previous = None
+        for control in advanced_controls:
+            control.setEnabled(True)
 
 
 class ModelComparisonPanel(QtWidgets.QGroupBox):

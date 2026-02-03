@@ -187,6 +187,7 @@ class TestPrimaryLayout(unittest.TestCase):
             panel.completion_notification_check.objectName(),
             "advancedCompletionNotifyCheck",
         )
+        self.assertEqual(panel.safe_mode_check.objectName(), "safeModeCheck")
         self.assertFalse(panel.completion_notification_check.isChecked())
         self.assertEqual(panel.compute_combo.objectName(), "advancedComputeCombo")
         compute_items = [
@@ -197,6 +198,33 @@ class TestPrimaryLayout(unittest.TestCase):
             compute_items,
             ["Auto", "GPU", "CPU"],
         )
+
+    def test_safe_mode_defaults(self) -> None:
+        from app.ui import MainWindow
+
+        window = MainWindow()
+        panel = window.advanced_options_panel
+        panel.toggle_button.setChecked(True)
+
+        self.assertFalse(panel.safe_mode_check.isChecked())
+        panel.safe_mode_check.setChecked(True)
+        self.assertEqual(panel.compute_combo.currentText(), "CPU")
+        self.assertEqual(panel.precision_combo.currentText(), "FP32")
+        self.assertEqual(panel.scale_combo.currentText(), "2x")
+        self.assertEqual(panel.tiling_combo.currentText(), "512 px")
+        self.assertFalse(panel.seam_blend_check.isChecked())
+        self.assertFalse(panel.compute_combo.isEnabled())
+        self.assertFalse(panel.precision_combo.isEnabled())
+        self.assertFalse(panel.scale_combo.isEnabled())
+        self.assertFalse(panel.tiling_combo.isEnabled())
+        self.assertFalse(panel.seam_blend_check.isEnabled())
+
+        panel.safe_mode_check.setChecked(False)
+        self.assertTrue(panel.compute_combo.isEnabled())
+        self.assertTrue(panel.precision_combo.isEnabled())
+        self.assertTrue(panel.scale_combo.isEnabled())
+        self.assertTrue(panel.tiling_combo.isEnabled())
+        self.assertTrue(panel.seam_blend_check.isEnabled())
 
     def test_comparison_controls(self) -> None:
         from app.ui import MainWindow, PreviewViewer

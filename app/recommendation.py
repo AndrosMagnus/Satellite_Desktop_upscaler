@@ -41,6 +41,7 @@ class ModelOverrides:
     tiling: bool | None = None
     precision: str | None = None
     compute_mode: str | None = None
+    safe_mode: bool = False
 
 
 _MODEL_CAPABILITIES = {
@@ -137,9 +138,17 @@ def recommend_model_with_overrides(
     """Return a recommendation updated with user overrides and warnings."""
 
     compute_warnings: list[str] = []
-    if overrides and overrides.compute_mode:
-        hardware = _apply_compute_override(hardware, overrides.compute_mode, compute_warnings)
+    safe_mode = bool(overrides.safe_mode) if overrides else False
+    compute_mode = "CPU" if safe_mode else (overrides.compute_mode if overrides else None)
+    if compute_mode:
+        hardware = _apply_compute_override(hardware, compute_mode, compute_warnings)
     recommendation = recommend_model(scene, hardware)
+    if safe_mode and overrides and overrides.model:
+        recommendation = apply_overrides(
+            recommendation, ModelOverrides(model=overrides.model, safe_mode=True)
+        )
+    if safe_mode:
+        recommendation = _apply_safe_mode_defaults(recommendation)
     if compute_warnings:
         recommendation = ModelRecommendation(
             model=recommendation.model,
@@ -149,7 +158,7 @@ def recommend_model_with_overrides(
             warnings=tuple((*recommendation.warnings, *compute_warnings)),
             reason=recommendation.reason,
         )
-    if overrides is None:
+    if overrides is None or safe_mode:
         return recommendation
     return apply_overrides(recommendation, overrides)
 
@@ -356,6 +365,22 @@ def _model_default_option(model: str, key: str) -> object | None:
     if isinstance(options, dict):
         return options.get(key)
     return None
+
+
+def _apply_safe_mode_defaults(recommendation: ModelRecommendation) -> ModelRecommendation:
+    model = recommendation.model
+    scales = _MODEL_SCALES.get(model, (2, 4))
+    conservative_scale = min(scales) if scales else recommendation.scale
+    warnings = list(recommendation.warnings)
+    warnings.append("Safe mode enabled; CPU-only conservative defaults applied.")
+    return ModelRecommendation(
+        model=model,
+        scale=conservative_scale,
+        tiling=True,
+        precision="fp32",
+        warnings=tuple(warnings),
+        reason=recommendation.reason,
+    )
 
 
 def _load_model_default_options() -> dict[str, dict[str, object]]:
