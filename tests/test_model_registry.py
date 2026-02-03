@@ -22,6 +22,8 @@ class TestModelRegistry(unittest.TestCase):
             "name",
             "source_url",
             "license",
+            "license_status",
+            "bundled",
             "gpu_required",
             "cpu_supported",
             "bands_supported",
@@ -46,6 +48,12 @@ class TestModelRegistry(unittest.TestCase):
             )
             self.assertIsInstance(
                 model["license"], str, f"Model entry {index} license must be str"
+            )
+            self.assertIsInstance(
+                model["license_status"], str, f"Model entry {index} license_status must be str"
+            )
+            self.assertIsInstance(
+                model["bundled"], bool, f"Model entry {index} bundled must be bool"
             )
             self.assertIsInstance(
                 model["gpu_required"], bool, f"Model entry {index} gpu_required must be bool"
@@ -91,7 +99,9 @@ class TestModelRegistry(unittest.TestCase):
 
         for name, expected_license in expected_licenses.items():
             self.assertIn(name, models_by_name, f"{name} must be listed in registry.json")
-            license_value = models_by_name[name]["license"]
+            model = models_by_name[name]
+            self.assertTrue(model["bundled"], f"{name} must be marked as bundled")
+            license_value = model["license"]
             self.assertEqual(
                 license_value,
                 expected_license,
@@ -102,6 +112,32 @@ class TestModelRegistry(unittest.TestCase):
                 permissive_licenses,
                 f"{name} license must be permissive",
             )
+
+        bundled_models = [model for model in data if model.get("bundled")]
+        for model in bundled_models:
+            self.assertIn(
+                model["license"],
+                permissive_licenses,
+                f"Bundled model {model['name']} must have a permissive license",
+            )
+
+    def test_pending_license_models_blocked_from_bundling(self) -> None:
+        with self.registry_path.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+
+        models_by_name = {model["name"]: model for model in data if isinstance(model, dict)}
+        self.assertIn("SRGAN adapted to EO", models_by_name)
+        self.assertIn("SenGLEAN", models_by_name)
+
+        srgan_model = models_by_name["SRGAN adapted to EO"]
+        self.assertEqual(srgan_model["license"], "Apache-2.0")
+        self.assertEqual(srgan_model["license_status"], "verified")
+        self.assertFalse(srgan_model["bundled"])
+
+        senglean_model = models_by_name["SenGLEAN"]
+        self.assertEqual(senglean_model["license"], "UNVERIFIED")
+        self.assertEqual(senglean_model["license_status"], "unverified")
+        self.assertFalse(senglean_model["bundled"])
 
 
 if __name__ == "__main__":
