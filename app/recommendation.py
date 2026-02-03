@@ -35,8 +35,11 @@ class ModelRecommendation:
 _MODEL_CAPABILITIES = {
     "Real-ESRGAN": {"gpu_required": False, "cpu_supported": True},
     "Satlas": {"gpu_required": False, "cpu_supported": True},
+    "SwinIR": {"gpu_required": False, "cpu_supported": True},
     "SRGAN adapted to EO": {"gpu_required": False, "cpu_supported": True},
+    "SatelliteSR": {"gpu_required": False, "cpu_supported": True},
     "SEN2SR": {"gpu_required": False, "cpu_supported": True},
+    "S2DR3": {"gpu_required": False, "cpu_supported": True},
     "DSen2": {"gpu_required": False, "cpu_supported": True},
     "LDSR-S2": {"gpu_required": False, "cpu_supported": True},
     "SenGLEAN": {"gpu_required": True, "cpu_supported": False},
@@ -47,13 +50,39 @@ _MODEL_CAPABILITIES = {
 _MODEL_SCALES = {
     "Real-ESRGAN": (2, 4),
     "Satlas": (4,),
+    "SwinIR": (2, 4),
     "SRGAN adapted to EO": (2, 4),
+    "SatelliteSR": (2, 4),
     "SEN2SR": (2,),
+    "S2DR3": (2, 4),
     "DSen2": (2,),
     "LDSR-S2": (2,),
     "SenGLEAN": (2, 4),
     "Swin2-MoSE": (2, 4),
     "MRDAM": (2, 4),
+}
+
+_PROVIDER_MODEL_PRIORITY = {
+    "Sentinel-2": {
+        "multispectral": ("S2DR3", "SEN2SR"),
+        "RGB": ("Satlas",),
+    },
+    "PlanetScope": {
+        "multispectral": ("SRGAN adapted to EO", "SatelliteSR"),
+        "RGB": ("SwinIR", "Real-ESRGAN"),
+    },
+    "Landsat": {
+        "multispectral": ("SRGAN adapted to EO",),
+        "RGB": ("SwinIR", "Real-ESRGAN"),
+    },
+    "Vantor": {
+        "multispectral": ("SRGAN adapted to EO", "SatelliteSR"),
+        "RGB": ("SatelliteSR", "SRGAN adapted to EO"),
+    },
+    "21AT": {
+        "multispectral": ("SRGAN adapted to EO", "SatelliteSR"),
+        "RGB": ("SatelliteSR", "SRGAN adapted to EO"),
+    },
 }
 
 
@@ -64,8 +93,11 @@ def recommend_model(scene: SceneMetadata, hardware: HardwareProfile) -> ModelRec
         raise ValueError("band_count must be positive")
 
     band_profile = _band_profile(scene.band_count)
-    model = _select_base_model(scene, band_profile)
     warnings: list[str] = []
+    model = _select_base_model(scene, band_profile)
+
+    if scene.provider == "Landsat" and band_profile == "multispectral":
+        warnings.append("Landsat multispectral SR is experimental; validate outputs carefully.")
 
     model = _enforce_hardware_constraints(model, band_profile, hardware, warnings)
     scale = _select_scale(scene.resolution_m, model)
@@ -95,14 +127,16 @@ def _select_base_model(scene: SceneMetadata, band_profile: str) -> str:
         return "MRDAM"
 
     provider = scene.provider
-    if provider == "Sentinel-2":
-        return "SEN2SR" if band_profile == "multispectral" else "Satlas"
-    if provider == "PlanetScope":
-        return "SRGAN adapted to EO" if band_profile == "multispectral" else "Real-ESRGAN"
-    if provider == "Landsat":
-        return "LDSR-S2" if band_profile == "multispectral" else "Real-ESRGAN"
-    if provider in {"Vantor", "21AT"}:
-        return "SRGAN adapted to EO" if band_profile == "multispectral" else "Real-ESRGAN"
+    if provider in _PROVIDER_MODEL_PRIORITY:
+        candidates = _PROVIDER_MODEL_PRIORITY[provider][band_profile]
+        return _select_first_candidate(candidates, band_profile)
+    return "SRGAN adapted to EO" if band_profile == "multispectral" else "Real-ESRGAN"
+
+
+def _select_first_candidate(candidates: tuple[str, ...], band_profile: str) -> str:
+    for model in candidates:
+        if model:
+            return model
     return "SRGAN adapted to EO" if band_profile == "multispectral" else "Real-ESRGAN"
 
 
