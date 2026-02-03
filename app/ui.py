@@ -9,6 +9,7 @@ import subprocess
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from app.band_handling import BandHandling, ExportSettings
+from app.mosaic_detection import suggest_mosaic
 from app.metadata import extract_image_header_info
 
 
@@ -1476,10 +1477,13 @@ class MainWindow(QtWidgets.QMainWindow):
             if not items:
                 message = "Select a file to see metadata."
             elif len(items) > 1:
+                mosaic_hint = suggest_mosaic([item.text() for item in items])
                 if self.model_comparison_panel.is_comparison_mode():
                     message = "Model comparison requires a single image."
+                    if mosaic_hint.message:
+                        message = f"{message} {mosaic_hint.message}"
                 else:
-                    message = "Multiple items selected."
+                    message = mosaic_hint.message or "Multiple items selected."
             self._current_preview_image = None
             self._update_comparison_state()
             self.metadata_summary.setText(message)
