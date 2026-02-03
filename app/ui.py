@@ -1326,8 +1326,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self._session_store = SessionStore()
         self._restoring_session = False
         self._session_dirty = False
+        self._autosave_timer = QtCore.QTimer(self)
         self._restore_session_if_needed()
         self._mark_session_active()
+        self._configure_session_autosave()
 
     def _build_ui(self) -> None:
         splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
@@ -1703,6 +1705,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self._session_dirty = True
         self._persist_session_state(dirty=True)
 
+    def _configure_session_autosave(self) -> None:
+        self._autosave_timer.setInterval(30_000)
+        self._autosave_timer.timeout.connect(self._autosave_session_state)
+        self._autosave_timer.start()
+
+    def _autosave_session_state(self) -> None:
+        self._persist_session_state()
+
     def _update_comparison_state(self) -> None:
         before_label, after_label = self.model_comparison_panel.comparison_labels()
         self.comparison_viewer.set_titles(before_label, after_label)
@@ -1734,6 +1744,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.comparison_viewer.set_after_image(self._current_preview_image)
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:  # noqa: N802
+        if self._autosave_timer.isActive():
+            self._autosave_timer.stop()
         self._persist_session_state(dirty=False)
         super().closeEvent(event)
 

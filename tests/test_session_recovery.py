@@ -76,6 +76,29 @@ class TestSessionRecovery(unittest.TestCase):
             self.assertEqual(window.input_list.count(), 1)
             self.assertEqual(window.input_list.item(0).text(), window.input_list.placeholder_text)
 
+    def test_autosave_captures_current_state(self) -> None:
+        from app.ui import MainWindow
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            session_path = os.path.join(tmpdir, "session.json")
+            self._set_session_env(session_path)
+
+            window = MainWindow()
+            self.addCleanup(window.close)
+
+            if os.path.exists(session_path):
+                os.remove(session_path)
+
+            window.input_list.clear()
+            window.input_list.addItem("/tmp/autosave_input.tif")
+            window._autosave_session_state()
+
+            with open(session_path, "r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+
+            self.assertEqual(payload["paths"], ["/tmp/autosave_input.tif"])
+            self.assertTrue(payload["dirty"])
+
 
 if __name__ == "__main__":
     unittest.main()
