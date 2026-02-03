@@ -13,6 +13,7 @@ from app.band_handling import BandHandling, ExportSettings
 from app.error_handling import UserFacingError, as_user_facing_error
 from app.mosaic_detection import preview_stitch_bounds, suggest_mosaic
 from app.metadata import extract_image_header_info
+from app.output_metadata import metadata_loss_warning
 from app.session import SessionState, SessionStore
 
 
@@ -1005,6 +1006,11 @@ class ExportPresetsPanel(QtWidgets.QGroupBox):
         details_form_layout.addRow("Band handling", band_handling_combo)
         details_form_layout.addRow("Output format", output_format_combo)
 
+        metadata_warning = QtWidgets.QLabel("")
+        metadata_warning.setObjectName("metadataWarningLabel")
+        metadata_warning.setWordWrap(True)
+        metadata_warning.setVisible(False)
+
         preset_description = QtWidgets.QLabel("Select a preset to see details.")
         preset_description.setObjectName("presetDescription")
         preset_description.setWordWrap(True)
@@ -1013,6 +1019,7 @@ class ExportPresetsPanel(QtWidgets.QGroupBox):
         layout.addWidget(preset_list)
         layout.addWidget(recommended_row)
         layout.addWidget(details_form)
+        layout.addWidget(metadata_warning)
         layout.addWidget(preset_description)
 
         self.preset_list = preset_list
@@ -1020,7 +1027,9 @@ class ExportPresetsPanel(QtWidgets.QGroupBox):
         self.use_recommended_button = use_recommended_button
         self.band_handling_combo = band_handling_combo
         self.output_format_combo = output_format_combo
+        self.metadata_warning_label = metadata_warning
         self.preset_description = preset_description
+        self._input_format: str | None = None
 
         self._presets = self._build_presets()
         self._populate_presets()
@@ -1028,6 +1037,7 @@ class ExportPresetsPanel(QtWidgets.QGroupBox):
 
         preset_list.currentRowChanged.connect(self._apply_selected_preset)
         use_recommended_button.clicked.connect(self._apply_recommended_preset)
+        output_format_combo.currentTextChanged.connect(self._update_metadata_warning)
 
     def _build_presets(self) -> list[dict[str, str]]:
         return [
@@ -1131,6 +1141,19 @@ class ExportPresetsPanel(QtWidgets.QGroupBox):
         )
         if self.band_handling_combo.findText(label) >= 0:
             self.band_handling_combo.setCurrentText(label)
+
+    def set_input_format(self, input_format: str | None) -> None:
+        self._input_format = input_format
+        self._update_metadata_warning()
+
+    def _update_metadata_warning(self) -> None:
+        warning = metadata_loss_warning(self._input_format, self.selected_output_format())
+        if warning:
+            self.metadata_warning_label.setText(warning)
+            self.metadata_warning_label.setVisible(True)
+        else:
+            self.metadata_warning_label.setText("")
+            self.metadata_warning_label.setVisible(False)
 
 
 class SystemInfoPanel(QtWidgets.QGroupBox):
@@ -1775,6 +1798,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._set_metadata_placeholders()
             if preview_metadata:
                 self._set_metadata(preview_metadata)
+            self.export_presets_panel.set_input_format(None)
             return
 
         selected_path = items[0].text()
@@ -1783,6 +1807,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._update_comparison_state()
             self.metadata_summary.setText("Select a file to see metadata.")
             self._set_metadata_placeholders()
+            self.export_presets_panel.set_input_format(None)
             return
 
         self._load_preview_and_metadata(selected_path)
@@ -1805,6 +1830,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.comparison_viewer.set_after_placeholder("Upscaled preview will appear here")
             self.metadata_summary.setText("File not found.")
             self._set_metadata_placeholders()
+            self.export_presets_panel.set_input_format(None)
             return
 
         image = self._read_image(path)
@@ -1829,6 +1855,7 @@ class MainWindow(QtWidgets.QMainWindow):
         filename = metadata.get("Filename", os.path.basename(path))
         self.metadata_summary.setText(f"Metadata for {filename}")
         self._set_metadata(metadata)
+        self.export_presets_panel.set_input_format(metadata.get("Format"))
 
     def _update_recommended_preset(self, path: str) -> None:
         recommendation = self._recommended_preset_for_path(path)

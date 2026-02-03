@@ -192,6 +192,7 @@ def _stitch_with_rasterio(paths: Sequence[str], output_path: str) -> str:
             descriptions = datasets[0].descriptions
             if descriptions and any(descriptions):
                 dest.descriptions = descriptions
+            _copy_rasterio_metadata(datasets[0], dest)
 
     return output_path
 
@@ -214,3 +215,61 @@ def _run_gdal_command(command: list[str], rasterio_error: Exception) -> None:
             f"GDAL error: {exc!r}."
         )
         raise RuntimeError(message) from exc
+
+
+def _copy_rasterio_metadata(source: object, dest: object) -> None:
+    try:
+        dest.update_tags(**source.tags())
+    except Exception:  # pragma: no cover - rasterio metadata guard
+        return
+
+    for namespace in _tag_namespaces(source):
+        try:
+            tags = source.tags(ns=namespace)
+        except Exception:  # pragma: no cover - rasterio metadata guard
+            continue
+        if tags:
+            dest.update_tags(ns=namespace, **tags)
+
+    source_count = getattr(source, "count", 0)
+    for band_index in range(1, source_count + 1):
+        try:
+            band_tags = source.tags(bidx=band_index)
+        except Exception:  # pragma: no cover - rasterio metadata guard
+            band_tags = {}
+        if band_tags:
+            dest.update_tags(bidx=band_index, **band_tags)
+        for namespace in _tag_namespaces(source, band_index):
+            try:
+                tags = source.tags(ns=namespace, bidx=band_index)
+            except Exception:  # pragma: no cover - rasterio metadata guard
+                continue
+            if tags:
+                dest.update_tags(bidx=band_index, ns=namespace, **tags)
+
+    for attr_name in ("colorinterp", "scales", "offsets", "units"):
+        try:
+            value = getattr(source, attr_name)
+        except Exception:  # pragma: no cover - rasterio metadata guard
+            continue
+        if value:
+            try:
+                setattr(dest, attr_name, value)
+            except Exception:  # pragma: no cover - rasterio metadata guard
+                continue
+
+
+def _tag_namespaces(source: object, band_index: int | None = None) -> tuple[str, ...]:
+    namespaces_fn = getattr(source, "tag_namespaces", None)
+    if namespaces_fn is None:
+        return ()
+    try:
+        if band_index is None:
+            namespaces = namespaces_fn()
+        else:
+            namespaces = namespaces_fn(bidx=band_index)
+    except Exception:  # pragma: no cover - rasterio metadata guard
+        return ()
+    if not namespaces:
+        return ()
+    return tuple(ns for ns in namespaces if ns)
