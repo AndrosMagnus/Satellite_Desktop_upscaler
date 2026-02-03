@@ -130,8 +130,8 @@ class TestModelRegistry(unittest.TestCase):
         self.assertIn("SenGLEAN", models_by_name)
 
         srgan_model = models_by_name["SRGAN adapted to EO"]
-        self.assertEqual(srgan_model["license"], "Apache-2.0")
-        self.assertEqual(srgan_model["license_status"], "verified")
+        self.assertEqual(srgan_model["license"], "UNVERIFIED")
+        self.assertEqual(srgan_model["license_status"], "unverified")
         self.assertFalse(srgan_model["bundled"])
 
         senglean_model = models_by_name["SenGLEAN"]

@@ -30,8 +30,8 @@
   {
     "name": "SRGAN adapted to EO",
     "source_url": "https://github.com/ESAOpenSR/SRGAN",
-    "license": "Apache-2.0",
-    "license_status": "verified",
+    "license": "UNVERIFIED",
+    "license_status": "unverified",
     "bundled": false,
     "gpu_required": false,
     "cpu_supported": true,
