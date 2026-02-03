@@ -1011,6 +1011,140 @@ class SystemInfoPanel(QtWidgets.QGroupBox):
         self.model_versions_value = model_versions
 
 
+class ChangelogPanel(QtWidgets.QGroupBox):
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__("Changelog", parent)
+        self.setObjectName("changelogPanel")
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setSpacing(6)
+
+        helper_text = QtWidgets.QLabel(
+            "Review recent app improvements and model package updates."
+        )
+        helper_text.setWordWrap(True)
+        helper_text.setObjectName("changelogHelper")
+
+        tabs = QtWidgets.QTabWidget()
+        tabs.setObjectName("changelogTabs")
+
+        app_tab, app_list, app_details = self._build_tab("appChangelogList")
+        model_tab, model_list, model_details = self._build_tab("modelChangelogList")
+        tabs.addTab(app_tab, "App Updates")
+        tabs.addTab(model_tab, "Model Updates")
+
+        layout.addWidget(helper_text)
+        layout.addWidget(tabs)
+
+        self.tabs = tabs
+        self.app_list = app_list
+        self.app_details = app_details
+        self.model_list = model_list
+        self.model_details = model_details
+        self._app_entries = self._build_app_entries()
+        self._model_entries = self._build_model_entries()
+        self._populate_list(self.app_list, self._app_entries)
+        self._populate_list(self.model_list, self._model_entries)
+        self._select_initial(self.app_list, self._app_entries, self.app_details)
+        self._select_initial(self.model_list, self._model_entries, self.model_details)
+
+        self.app_list.currentRowChanged.connect(
+            lambda row: self._apply_entry(row, self._app_entries, self.app_details)
+        )
+        self.model_list.currentRowChanged.connect(
+            lambda row: self._apply_entry(row, self._model_entries, self.model_details)
+        )
+
+    def _build_tab(
+        self, list_object_name: str
+    ) -> tuple[QtWidgets.QWidget, QtWidgets.QListWidget, QtWidgets.QLabel]:
+        tab = QtWidgets.QWidget()
+        tab_layout = QtWidgets.QVBoxLayout(tab)
+        tab_layout.setContentsMargins(0, 0, 0, 0)
+        tab_layout.setSpacing(6)
+
+        changelog_list = QtWidgets.QListWidget()
+        changelog_list.setObjectName(list_object_name)
+        changelog_list.setSelectionMode(
+            QtWidgets.QAbstractItemView.SelectionMode.SingleSelection
+        )
+
+        details = QtWidgets.QLabel("Select an entry to see details.")
+        details.setWordWrap(True)
+        details.setObjectName(f"{list_object_name}Details")
+
+        tab_layout.addWidget(changelog_list, 1)
+        tab_layout.addWidget(details)
+        return tab, changelog_list, details
+
+    def _build_app_entries(self) -> list[dict[str, str]]:
+        return [
+            {
+                "date": "2026-01-20",
+                "title": "Preview workflow polish",
+                "details": (
+                    "Refined the preview comparison layout and added clearer empty-state "
+                    "messaging for faster review."
+                ),
+            },
+            {
+                "date": "2026-01-05",
+                "title": "Model manager baseline",
+                "details": (
+                    "Introduced one-click install/uninstall controls with version visibility."
+                ),
+            },
+        ]
+
+    def _build_model_entries(self) -> list[dict[str, str]]:
+        entries = [
+            {
+                "date": "2026-01-18",
+                "title": "Real-ESRGAN bundled",
+                "details": "Bundled RGB model ready for instant upscaling workflows.",
+            },
+            {
+                "date": "2026-01-12",
+                "title": "Satlas bundled",
+                "details": "Bundled multi-band model tuned for Sentinel-2 scenes.",
+            },
+        ]
+        return entries
+
+    def _populate_list(
+        self, changelog_list: QtWidgets.QListWidget, entries: list[dict[str, str]]
+    ) -> None:
+        changelog_list.clear()
+        for entry in entries:
+            label = f"{entry['date']} — {entry['title']}"
+            item = QtWidgets.QListWidgetItem(label)
+            item.setData(QtCore.Qt.ItemDataRole.UserRole, entry)
+            changelog_list.addItem(item)
+
+    def _select_initial(
+        self,
+        changelog_list: QtWidgets.QListWidget,
+        entries: list[dict[str, str]],
+        details: QtWidgets.QLabel,
+    ) -> None:
+        if changelog_list.count() == 0:
+            details.setText("No updates available.")
+            return
+        changelog_list.setCurrentRow(0)
+        self._apply_entry(0, entries, details)
+
+    def _apply_entry(
+        self,
+        row: int,
+        entries: list[dict[str, str]],
+        details: QtWidgets.QLabel,
+    ) -> None:
+        if row < 0 or row >= len(entries):
+            details.setText("Select an entry to see details.")
+            return
+        entry = entries[row]
+        details.setText(f"{entry['date']} — {entry['details']}")
+
+
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -1141,6 +1275,8 @@ class MainWindow(QtWidgets.QMainWindow):
         right_layout.addWidget(advanced_options_panel)
         model_manager_panel = ModelManagerPanel()
         right_layout.addWidget(model_manager_panel)
+        changelog_panel = ChangelogPanel()
+        right_layout.addWidget(changelog_panel)
         system_info_panel = SystemInfoPanel()
         right_layout.addWidget(system_info_panel)
         right_layout.addStretch(1)
@@ -1171,6 +1307,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.export_presets_panel = export_presets_panel
         self.advanced_options_panel = advanced_options_panel
         self.model_manager_panel = model_manager_panel
+        self.changelog_panel = changelog_panel
         self.system_info_panel = system_info_panel
 
         add_files_button.clicked.connect(self._select_files)

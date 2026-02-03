@@ -189,6 +189,20 @@ class TestPrimaryLayout(unittest.TestCase):
         self.assertTrue(panel.cuda_value.text())
         self.assertIn("Real-ESRGAN", panel.model_versions_value.text())
 
+    def test_changelog_panel(self) -> None:
+        from app.ui import ChangelogPanel, MainWindow
+
+        window = MainWindow()
+        panel = window.changelog_panel
+        self.assertIsInstance(panel, ChangelogPanel)
+        self.assertEqual(panel.objectName(), "changelogPanel")
+        self.assertEqual(panel.tabs.objectName(), "changelogTabs")
+        self.assertEqual(panel.tabs.count(), 2)
+        self.assertEqual(panel.tabs.tabText(0), "App Updates")
+        self.assertEqual(panel.tabs.tabText(1), "Model Updates")
+        self.assertGreater(panel.app_list.count(), 0)
+        self.assertGreater(panel.model_list.count(), 0)
+
 
 if __name__ == "__main__":
     unittest.main()
