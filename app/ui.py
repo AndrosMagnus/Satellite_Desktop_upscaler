@@ -1150,6 +1150,7 @@ class MainWindow(QtWidgets.QMainWindow):
         super().__init__()
         self.setWindowTitle("Satellite Upscale")
         self._build_ui()
+        self._configure_shortcuts()
         self._current_preview_image: QtGui.QImage | None = None
         self._update_comparison_state()
 
@@ -1323,6 +1324,22 @@ class MainWindow(QtWidgets.QMainWindow):
         model_comparison_panel.model_b_combo.currentTextChanged.connect(
             self._update_comparison_state
         )
+
+    def _configure_shortcuts(self) -> None:
+        self.add_files_button.setShortcut(QtGui.QKeySequence("Ctrl+O"))
+        self.add_folder_button.setShortcut(QtGui.QKeySequence("Ctrl+Shift+O"))
+        workflow_shortcuts = [
+            "Ctrl+1",
+            "Ctrl+2",
+            "Ctrl+3",
+            "Ctrl+4",
+            "Ctrl+5",
+            "Ctrl+6",
+        ]
+        for action_button, shortcut in zip(
+            self.workflow_stage_actions, workflow_shortcuts, strict=True
+        ):
+            action_button.setShortcut(QtGui.QKeySequence(shortcut))
 
     def _select_files(self) -> None:
         files, _ = QtWidgets.QFileDialog.getOpenFileNames(

@@ -63,6 +63,17 @@ class TestPrimaryLayout(unittest.TestCase):
         )
         self.assertEqual(len(window.workflow_stage_actions), 6)
 
+    def test_primary_action_shortcuts(self) -> None:
+        from app.ui import MainWindow
+
+        window = MainWindow()
+        self.assertEqual(window.add_files_button.shortcut().toString(), "Ctrl+O")
+        self.assertEqual(window.add_folder_button.shortcut().toString(), "Ctrl+Shift+O")
+        self.assertEqual(
+            [button.shortcut().toString() for button in window.workflow_stage_actions],
+            ["Ctrl+1", "Ctrl+2", "Ctrl+3", "Ctrl+4", "Ctrl+5", "Ctrl+6"],
+        )
+
     def test_model_manager_panel(self) -> None:
         from app.ui import MainWindow, ModelManagerPanel
 
