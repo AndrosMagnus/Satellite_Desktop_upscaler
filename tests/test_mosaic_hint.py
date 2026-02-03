@@ -40,6 +40,10 @@ class TestMosaicHint(unittest.TestCase):
         summary = window.metadata_summary.text().lower()
         self.assertIn("mosaic", summary)
         self.assertIn("stitch", summary)
+        self.assertNotEqual(
+            window.metadata_value_labels["Stitch extent"].text(),
+            "—",
+        )
 
 
 if __name__ == "__main__":

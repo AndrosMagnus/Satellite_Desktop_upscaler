@@ -9,7 +9,7 @@ import subprocess
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from app.band_handling import BandHandling, ExportSettings
-from app.mosaic_detection import suggest_mosaic
+from app.mosaic_detection import preview_stitch_bounds, suggest_mosaic
 from app.metadata import extract_image_header_info
 
 
@@ -1260,6 +1260,8 @@ class MainWindow(QtWidgets.QMainWindow):
             "Dimensions",
             "File size",
             "Modified",
+            "Stitch extent",
+            "Tile boundaries",
         ]
         metadata_value_labels: dict[str, QtWidgets.QLabel] = {}
         for field in metadata_fields:
@@ -1474,10 +1476,16 @@ class MainWindow(QtWidgets.QMainWindow):
         items = self.input_list.selectedItems()
         if len(items) != 1:
             message = "Select a single file to preview."
+            preview_metadata: dict[str, str] = {}
             if not items:
                 message = "Select a file to see metadata."
             elif len(items) > 1:
-                mosaic_hint = suggest_mosaic([item.text() for item in items])
+                paths = [item.text() for item in items]
+                mosaic_hint = suggest_mosaic(paths)
+                preview = preview_stitch_bounds(paths)
+                if preview is not None:
+                    preview_metadata["Stitch extent"] = preview.extent
+                    preview_metadata["Tile boundaries"] = preview.boundaries
                 if self.model_comparison_panel.is_comparison_mode():
                     message = "Model comparison requires a single image."
                     if mosaic_hint.message:
@@ -1488,6 +1496,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self._update_comparison_state()
             self.metadata_summary.setText(message)
             self._set_metadata_placeholders()
+            if preview_metadata:
+                self._set_metadata(preview_metadata)
             return
 
         selected_path = items[0].text()

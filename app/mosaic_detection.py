@@ -13,6 +13,12 @@ class MosaicSuggestion:
     message: str | None
 
 
+@dataclass(frozen=True)
+class StitchPreview:
+    extent: str
+    boundaries: str
+
+
 _BBOX_PATTERN = re.compile(
     r"x(?P<x>-?\d+)[^0-9]+y(?P<y>-?\d+)[^0-9]+w(?P<w>\d+)[^0-9]+h(?P<h>\d+)",
     re.IGNORECASE,
@@ -93,6 +99,29 @@ def suggest_mosaic(paths: list[str]) -> MosaicSuggestion:
     return MosaicSuggestion(True, has_adjacent, has_overlap, message)
 
 
+def preview_stitch_bounds(paths: list[str]) -> StitchPreview | None:
+    if len(paths) < 2:
+        return None
+
+    bboxes: list[tuple[int, int, int, int]] = []
+    grid_indices: list[tuple[int, int]] = []
+    for path in paths:
+        name = os.path.basename(path)
+        bbox = _parse_bbox(name)
+        if bbox is not None:
+            bboxes.append(bbox)
+            continue
+        grid = _parse_grid_indices(name)
+        if grid is not None:
+            grid_indices.append(grid)
+
+    if len(bboxes) >= 2:
+        return _preview_from_bboxes(bboxes)
+    if len(grid_indices) >= 2:
+        return _preview_from_grid(grid_indices)
+    return None
+
+
 def _parse_bbox(name: str) -> tuple[int, int, int, int] | None:
     match = _BBOX_PATTERN.search(name)
     if not match:
@@ -146,3 +175,42 @@ def _describe_relationship(has_adjacent: bool, has_overlap: bool) -> str:
     if has_adjacent:
         return "adjacent"
     return "overlapping"
+
+
+def _preview_from_bboxes(bboxes: list[tuple[int, int, int, int]]) -> StitchPreview:
+    min_x = min(bbox[0] for bbox in bboxes)
+    min_y = min(bbox[1] for bbox in bboxes)
+    max_x = max(bbox[0] + bbox[2] for bbox in bboxes)
+    max_y = max(bbox[1] + bbox[3] for bbox in bboxes)
+    width = max_x - min_x
+    height = max_y - min_y
+    extent = f"x={min_x}..{max_x}, y={min_y}..{max_y} (width={width}, height={height})"
+
+    x_bounds = sorted({x for x, _, w, _ in bboxes for x in (x, x + w)})
+    y_bounds = sorted({y for _, y, _, h in bboxes for y in (y, y + h)})
+    boundaries = f"x={_format_boundaries(x_bounds)}; y={_format_boundaries(y_bounds)}"
+    return StitchPreview(extent=extent, boundaries=boundaries)
+
+
+def _preview_from_grid(grid_indices: list[tuple[int, int]]) -> StitchPreview:
+    rows = [row for row, _ in grid_indices]
+    cols = [col for _, col in grid_indices]
+    min_row = min(rows)
+    max_row = max(rows)
+    min_col = min(cols)
+    max_col = max(cols)
+    tiles_y = max_row - min_row + 1
+    tiles_x = max_col - min_col + 1
+    extent = (
+        f"rows={min_row}..{max_row}, cols={min_col}..{max_col} "
+        f"({tiles_y} x {tiles_x} tiles)"
+    )
+
+    row_bounds = sorted({r for row in rows for r in (row, row + 1)})
+    col_bounds = sorted({c for col in cols for c in (col, col + 1)})
+    boundaries = f"rows={_format_boundaries(row_bounds)}; cols={_format_boundaries(col_bounds)}"
+    return StitchPreview(extent=extent, boundaries=boundaries)
+
+
+def _format_boundaries(values: list[int]) -> str:
+    return ", ".join(str(value) for value in values)
