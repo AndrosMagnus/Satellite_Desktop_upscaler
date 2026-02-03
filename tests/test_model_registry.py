@@ -92,6 +92,34 @@ class TestModelRegistry(unittest.TestCase):
                 model["weights_url"], f"Model entry {index} weights_url must not be empty"
             )
 
+            default_options = model["default_options"]
+            for key in ("scale", "tiling", "precision"):
+                self.assertIn(
+                    key,
+                    default_options,
+                    f"Model entry {index} default_options missing {key}",
+                )
+            self.assertIsInstance(
+                default_options["scale"],
+                int,
+                f"Model entry {index} default_options scale must be int",
+            )
+            self.assertIn(
+                default_options["scale"],
+                model["scales"],
+                f"Model entry {index} default_options scale must be supported by scales",
+            )
+            self.assertIsInstance(
+                default_options["tiling"],
+                str,
+                f"Model entry {index} default_options tiling must be str",
+            )
+            self.assertIsInstance(
+                default_options["precision"],
+                str,
+                f"Model entry {index} default_options precision must be str",
+            )
+
     def test_bundled_model_licenses_permissive(self) -> None:
         with self.registry_path.open("r", encoding="utf-8") as handle:
             data = json.load(handle)

@@ -12,7 +12,7 @@
     "scales": [2, 4],
     "weights_url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth",
     "checksum": "sha256:TODO",
-    "default_options": {}
+    "default_options": {"scale": 4, "tiling": "auto", "precision": "auto"}
   },
   {
     "name": "Satlas",
@@ -27,7 +27,7 @@
     "scales": [4],
     "weights_url": "https://pub-25c498004d1e4d4c8da69b2c05676836.r2.dev/esrgan_1S2.pth",
     "checksum": "sha256:TODO",
-    "default_options": {}
+    "default_options": {"scale": 4, "tiling": "auto", "precision": "auto"}
   },
   {
     "name": "SwinIR",
@@ -42,7 +42,7 @@
     "scales": [2, 4],
     "weights_url": "TBD",
     "checksum": "sha256:TODO",
-    "default_options": {}
+    "default_options": {"scale": 4, "tiling": "auto", "precision": "auto"}
   },
   {
     "name": "SatelliteSR",
@@ -57,7 +57,7 @@
     "scales": [2, 4],
     "weights_url": "TBD",
     "checksum": "sha256:TODO",
-    "default_options": {}
+    "default_options": {"scale": 4, "tiling": "auto", "precision": "auto"}
   },
   {
     "name": "MRDAM",
@@ -72,7 +72,7 @@
     "scales": [2, 4],
     "weights_url": "TBD",
     "checksum": "sha256:TODO",
-    "default_options": {}
+    "default_options": {"scale": 4, "tiling": "auto", "precision": "auto"}
   },
   {
     "name": "SRGAN adapted to EO",
@@ -87,7 +87,7 @@
     "scales": [2, 4],
     "weights_url": "TBD",
     "checksum": "sha256:TODO",
-    "default_options": {}
+    "default_options": {"scale": 4, "tiling": "auto", "precision": "auto"}
   },
   {
     "name": "S2DR3",
@@ -102,7 +102,7 @@
     "scales": [2, 4],
     "weights_url": "TBD",
     "checksum": "sha256:TODO",
-    "default_options": {}
+    "default_options": {"scale": 4, "tiling": "auto", "precision": "auto"}
   },
   {
     "name": "SEN2SR",
@@ -117,7 +117,7 @@
     "scales": [2],
     "weights_url": "TBD",
     "checksum": "sha256:TODO",
-    "default_options": {}
+    "default_options": {"scale": 2, "tiling": "auto", "precision": "auto"}
   },
   {
     "name": "LDSR-S2",
@@ -132,7 +132,7 @@
     "scales": [2],
     "weights_url": "TBD",
     "checksum": "sha256:TODO",
-    "default_options": {}
+    "default_options": {"scale": 2, "tiling": "auto", "precision": "auto"}
   },
   {
     "name": "SenGLEAN",
@@ -147,7 +147,7 @@
     "scales": [2, 4],
     "weights_url": "TBD",
     "checksum": "sha256:TODO",
-    "default_options": {}
+    "default_options": {"scale": 4, "tiling": "auto", "precision": "auto"}
   },
   {
     "name": "Swin2-MoSE",
@@ -162,7 +162,7 @@
     "scales": [2, 4],
     "weights_url": "TBD",
     "checksum": "sha256:TODO",
-    "default_options": {}
+    "default_options": {"scale": 4, "tiling": "auto", "precision": "auto"}
   },
   {
     "name": "DSen2",
@@ -177,6 +177,6 @@
     "scales": [2],
     "weights_url": "TBD",
     "checksum": "sha256:TODO",
-    "default_options": {}
+    "default_options": {"scale": 2, "tiling": "auto", "precision": "auto"}
   }
 ]

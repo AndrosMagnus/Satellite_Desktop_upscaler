@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from pathlib import Path
 
 from scripts.hardware_targets import get_hardware_targets
 
@@ -101,8 +103,8 @@ def recommend_model(scene: SceneMetadata, hardware: HardwareProfile) -> ModelRec
 
     model = _enforce_hardware_constraints(model, band_profile, hardware, warnings)
     scale = _select_scale(scene.resolution_m, model)
-    tiling = _should_tile(hardware)
-    precision = _select_precision(hardware)
+    tiling = _select_tiling(model, hardware)
+    precision = _select_precision(hardware, model)
 
     if scene.resolution_m is not None and scene.resolution_m <= 0.5:
         warnings.append("Input appears high resolution; consider scale 2 or no upscale.")
@@ -165,6 +167,10 @@ def _enforce_hardware_constraints(
 def _select_scale(resolution_m: float | None, model: str) -> int:
     preferred = _preferred_scale(resolution_m)
     scales = _MODEL_SCALES.get(model, (2, 4))
+    if resolution_m is None:
+        default_scale = _default_scale(model, scales)
+        if default_scale is not None:
+            return default_scale
     if preferred in scales:
         return preferred
     for scale in sorted(scales):
@@ -192,11 +198,68 @@ def _should_tile(hardware: HardwareProfile) -> bool:
     return False
 
 
-def _select_precision(hardware: HardwareProfile) -> str:
-    targets = get_hardware_targets()
-    if hardware.gpu_available and hardware.vram_gb >= targets.minimum_vram_gb:
+def _select_tiling(model: str, hardware: HardwareProfile) -> bool:
+    if _should_tile(hardware):
+        return True
+    default_tiling = _model_default_option(model, "tiling")
+    if isinstance(default_tiling, bool):
+        return default_tiling
+    return False
+
+
+def _select_precision(hardware: HardwareProfile, model: str) -> str:
+    default_precision = _model_default_option(model, "precision")
+    if isinstance(default_precision, str):
+        normalized = default_precision.lower()
+        if normalized in {"fp16", "fp32"}:
+            if normalized == "fp16" and _supports_fp16(hardware):
+                return "fp16"
+            return "fp32"
+    if _supports_fp16(hardware):
         return "fp16"
     return "fp32"
+
+
+def _supports_fp16(hardware: HardwareProfile) -> bool:
+    targets = get_hardware_targets()
+    return hardware.gpu_available and hardware.vram_gb >= targets.minimum_vram_gb
+
+
+def _default_scale(model: str, scales: tuple[int, ...]) -> int | None:
+    default_scale = _model_default_option(model, "scale")
+    if isinstance(default_scale, int) and default_scale in scales:
+        return default_scale
+    return None
+
+
+def _model_default_option(model: str, key: str) -> object | None:
+    options = _MODEL_DEFAULT_OPTIONS.get(model, {})
+    if isinstance(options, dict):
+        return options.get(key)
+    return None
+
+
+def _load_model_default_options() -> dict[str, dict[str, object]]:
+    repo_root = Path(__file__).resolve().parents[1]
+    registry_path = repo_root / "models" / "registry.json"
+    try:
+        with registry_path.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+    defaults: dict[str, dict[str, object]] = {}
+    for entry in data:
+        if not isinstance(entry, dict):
+            continue
+        name = entry.get("name")
+        options = entry.get("default_options")
+        if isinstance(name, str) and isinstance(options, dict):
+            defaults[name] = options
+    return defaults
+
+
+_MODEL_DEFAULT_OPTIONS = _load_model_default_options()
 
 
 def _build_reason(scene: SceneMetadata, band_profile: str, model: str) -> str:

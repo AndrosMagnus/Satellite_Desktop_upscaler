@@ -1,6 +1,6 @@
 import unittest
 
-from app.recommendation import HardwareProfile, SceneMetadata, recommend_model
+from app.recommendation import HardwareProfile, SceneMetadata, _select_scale, recommend_model
 
 
 class TestRecommendationEngine(unittest.TestCase):
@@ -72,6 +72,9 @@ class TestRecommendationEngine(unittest.TestCase):
         self.assertTrue(
             any("high resolution" in warning for warning in recommendation.warnings)
         )
+
+    def test_default_scale_when_resolution_unknown(self) -> None:
+        self.assertEqual(_select_scale(None, "SEN2SR"), 2)
 
 
 if __name__ == "__main__":
