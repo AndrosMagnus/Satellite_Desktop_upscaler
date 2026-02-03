@@ -1522,18 +1522,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.export_presets_panel.set_recommended_preset(recommendation)
 
     def _recommended_preset_for_path(self, path: str) -> str | None:
-        lower_path = path.lower()
-        rules = [
-            ("sentinel-2", ["sentinel", "s2"]),
-            ("PlanetScope", ["planetscope", "planet"]),
-            ("Vantor", ["vantor", "worldview"]),
-            ("21AT", ["21at", "triplesat"]),
-            ("Landsat", ["landsat"]),
-        ]
-        for preset_name, tokens in rules:
-            if any(token in lower_path for token in tokens):
-                return preset_name
-        return None
+        from app.provider_detection import detect_provider
+
+        return detect_provider(path)
 
     def _read_image(self, path: str) -> QtGui.QImage | None:
         reader = QtGui.QImageReader(path)
