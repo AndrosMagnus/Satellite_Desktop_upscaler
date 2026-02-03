@@ -31,11 +31,15 @@ class TestPrimaryLayout(unittest.TestCase):
         self.assertIsInstance(window.input_list, InputListWidget)
 
     def test_preview_and_metadata_on_right(self) -> None:
-        from app.ui import MainWindow
+        from app.ui import ComparisonViewer, MainWindow
 
         window = MainWindow()
-        self.assertIsInstance(window.preview_label, QtWidgets.QLabel)
-        self.assertEqual(window.preview_label.objectName(), "previewLabel")
+        self.assertIsInstance(window.comparison_viewer, ComparisonViewer)
+        self.assertEqual(window.comparison_viewer.objectName(), "comparisonViewer")
+        self.assertEqual(window.comparison_viewer.tabs.objectName(), "comparisonTabs")
+        self.assertEqual(window.comparison_viewer.tabs.count(), 2)
+        self.assertEqual(window.comparison_viewer.tabs.tabText(0), "Side-by-side")
+        self.assertEqual(window.comparison_viewer.tabs.tabText(1), "Swipe")
         self.assertIsInstance(window.metadata_summary, QtWidgets.QLabel)
         self.assertEqual(window.metadata_summary.objectName(), "metadataSummary")
 
@@ -58,6 +62,18 @@ class TestPrimaryLayout(unittest.TestCase):
             ],
         )
         self.assertEqual(len(window.workflow_stage_actions), 6)
+
+    def test_comparison_controls(self) -> None:
+        from app.ui import MainWindow, PreviewViewer
+
+        window = MainWindow()
+        side_by_side = window.comparison_viewer.side_by_side
+        self.assertIsInstance(side_by_side.before_viewer, PreviewViewer)
+        self.assertIsInstance(side_by_side.after_viewer, PreviewViewer)
+        swipe = window.comparison_viewer.swipe
+        self.assertEqual(swipe.slider.minimum(), 0)
+        self.assertEqual(swipe.slider.maximum(), 100)
+        self.assertEqual(swipe.slider.value(), 50)
 
 
 if __name__ == "__main__":

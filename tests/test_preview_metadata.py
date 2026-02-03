@@ -33,7 +33,7 @@ class TestPreviewAndMetadata(unittest.TestCase):
             window.input_list.setCurrentRow(0)
             QtWidgets.QApplication.processEvents()
 
-            pixmap = window.preview_label.pixmap()
+            pixmap = window.comparison_viewer.side_by_side.before_viewer.pixmap()
             self.assertIsNotNone(pixmap)
             self.assertFalse(pixmap.isNull())
 

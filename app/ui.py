@@ -58,6 +58,224 @@ class PreviewViewer(QtWidgets.QLabel):
             self._update_scaled_pixmap()
 
 
+class SideBySideComparison(QtWidgets.QWidget):
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(12)
+
+        before_column = QtWidgets.QWidget()
+        before_layout = QtWidgets.QVBoxLayout(before_column)
+        before_layout.setContentsMargins(0, 0, 0, 0)
+        before_layout.setSpacing(6)
+        before_title = QtWidgets.QLabel("Before")
+        before_title.setObjectName("beforeTitle")
+        before_viewer = PreviewViewer()
+        before_viewer.setObjectName("beforePreview")
+        before_layout.addWidget(before_title)
+        before_layout.addWidget(before_viewer, 1)
+
+        after_column = QtWidgets.QWidget()
+        after_layout = QtWidgets.QVBoxLayout(after_column)
+        after_layout.setContentsMargins(0, 0, 0, 0)
+        after_layout.setSpacing(6)
+        after_title = QtWidgets.QLabel("After")
+        after_title.setObjectName("afterTitle")
+        after_viewer = PreviewViewer()
+        after_viewer.setObjectName("afterPreview")
+        after_layout.addWidget(after_title)
+        after_layout.addWidget(after_viewer, 1)
+
+        layout.addWidget(before_column, 1)
+        layout.addWidget(after_column, 1)
+
+        self.before_viewer = before_viewer
+        self.after_viewer = after_viewer
+
+    def set_before_image(self, image: QtGui.QImage | None) -> None:
+        if image is None:
+            return
+        self.before_viewer.set_image(image)
+
+    def set_after_image(self, image: QtGui.QImage | None) -> None:
+        if image is None:
+            return
+        self.after_viewer.set_image(image)
+
+    def set_before_placeholder(self, text: str) -> None:
+        self.before_viewer.set_placeholder(text)
+
+    def set_after_placeholder(self, text: str) -> None:
+        self.after_viewer.set_placeholder(text)
+
+
+class SwipeComparisonView(QtWidgets.QFrame):
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._before_pixmap: QtGui.QPixmap | None = None
+        self._after_pixmap: QtGui.QPixmap | None = None
+        self._placeholder_text = "Preview will appear here"
+        self._slider_ratio = 0.5
+        self.setFrameShape(QtWidgets.QFrame.Shape.StyledPanel)
+        self.setMinimumHeight(220)
+
+    def set_before_image(self, image: QtGui.QImage | None) -> None:
+        self._before_pixmap = (
+            QtGui.QPixmap.fromImage(image) if image is not None else None
+        )
+        self.update()
+
+    def set_after_image(self, image: QtGui.QImage | None) -> None:
+        self._after_pixmap = (
+            QtGui.QPixmap.fromImage(image) if image is not None else None
+        )
+        self.update()
+
+    def set_placeholder(self, text: str) -> None:
+        self._placeholder_text = text
+        self.update()
+
+    def set_slider_ratio(self, ratio: float) -> None:
+        self._slider_ratio = max(0.0, min(1.0, ratio))
+        self.update()
+
+    def has_before_image(self) -> bool:
+        return self._before_pixmap is not None and not self._before_pixmap.isNull()
+
+    def _target_rect(self, pixmap: QtGui.QPixmap) -> QtCore.QRect:
+        if pixmap.isNull():
+            return self.rect()
+        scaled = pixmap.scaled(
+            self.size(),
+            QtCore.Qt.AspectRatioMode.KeepAspectRatio,
+            QtCore.Qt.TransformationMode.SmoothTransformation,
+        )
+        x = (self.width() - scaled.width()) // 2
+        y = (self.height() - scaled.height()) // 2
+        return QtCore.QRect(x, y, scaled.width(), scaled.height())
+
+    def paintEvent(self, event: QtGui.QPaintEvent) -> None:
+        super().paintEvent(event)
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.SmoothPixmapTransform)
+        painter.fillRect(self.rect(), self.palette().color(QtGui.QPalette.ColorRole.Base))
+
+        if self._before_pixmap is None or self._before_pixmap.isNull():
+            painter.drawText(
+                self.rect(),
+                QtCore.Qt.AlignmentFlag.AlignCenter,
+                self._placeholder_text,
+            )
+            return
+
+        target_rect = self._target_rect(self._before_pixmap)
+        painter.drawPixmap(target_rect, self._before_pixmap)
+
+        if self._after_pixmap is None or self._after_pixmap.isNull():
+            return
+
+        clip_width = int(target_rect.width() * self._slider_ratio)
+        clip_rect = QtCore.QRect(
+            target_rect.left(), target_rect.top(), clip_width, target_rect.height()
+        )
+        painter.save()
+        painter.setClipRect(clip_rect)
+        painter.drawPixmap(target_rect, self._after_pixmap)
+        painter.restore()
+
+        divider_x = target_rect.left() + clip_width
+        divider_pen = QtGui.QPen(self.palette().color(QtGui.QPalette.ColorRole.Highlight))
+        divider_pen.setWidth(2)
+        painter.setPen(divider_pen)
+        painter.drawLine(divider_x, target_rect.top(), divider_x, target_rect.bottom())
+
+
+class SwipeComparisonWidget(QtWidgets.QWidget):
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+
+        view = SwipeComparisonView()
+        view.setObjectName("swipePreview")
+        slider_row = QtWidgets.QWidget()
+        slider_layout = QtWidgets.QHBoxLayout(slider_row)
+        slider_layout.setContentsMargins(0, 0, 0, 0)
+        slider_label = QtWidgets.QLabel("Swipe")
+        slider_label.setObjectName("swipeLabel")
+        slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        slider.setObjectName("swipeSlider")
+        slider.setRange(0, 100)
+        slider.setValue(50)
+        slider_layout.addWidget(slider_label)
+        slider_layout.addWidget(slider, 1)
+
+        slider.valueChanged.connect(lambda value: view.set_slider_ratio(value / 100.0))
+
+        layout.addWidget(view, 1)
+        layout.addWidget(slider_row)
+
+        self.view = view
+        self.slider = slider
+
+    def set_before_image(self, image: QtGui.QImage | None) -> None:
+        self.view.set_before_image(image)
+
+    def set_after_image(self, image: QtGui.QImage | None) -> None:
+        self.view.set_after_image(image)
+
+    def set_placeholder(self, text: str) -> None:
+        self.view.set_placeholder(text)
+
+
+class ComparisonViewer(QtWidgets.QWidget):
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        tabs = QtWidgets.QTabWidget()
+        tabs.setObjectName("comparisonTabs")
+        side_by_side = SideBySideComparison()
+        side_by_side.setObjectName("sideBySideComparison")
+        swipe = SwipeComparisonWidget()
+        swipe.setObjectName("swipeComparison")
+        tabs.addTab(side_by_side, "Side-by-side")
+        tabs.addTab(swipe, "Swipe")
+
+        layout.addWidget(tabs)
+
+        self.tabs = tabs
+        self.side_by_side = side_by_side
+        self.swipe = swipe
+
+        self.set_before_placeholder("Preview will appear here")
+        self.set_after_placeholder("Upscaled preview will appear here")
+
+    def set_before_image(self, image: QtGui.QImage | None) -> None:
+        if image is None:
+            self.set_before_placeholder("Preview will appear here")
+            return
+        self.side_by_side.set_before_image(image)
+        self.swipe.set_before_image(image)
+
+    def set_after_image(self, image: QtGui.QImage | None) -> None:
+        if image is None:
+            self.set_after_placeholder("Upscaled preview will appear here")
+            return
+        self.side_by_side.set_after_image(image)
+        self.swipe.set_after_image(image)
+
+    def set_before_placeholder(self, text: str) -> None:
+        self.side_by_side.set_before_placeholder(text)
+        self.swipe.set_placeholder(text)
+
+    def set_after_placeholder(self, text: str) -> None:
+        self.side_by_side.set_after_placeholder(text)
+        if self.swipe.view.has_before_image():
+            self.swipe.view.set_after_image(None)
 class InputListWidget(QtWidgets.QListWidget):
     placeholder_text = "Drop files or folders here to begin."
     paths_added = QtCore.Signal(list)
@@ -173,9 +391,9 @@ class MainWindow(QtWidgets.QMainWindow):
         preview_group = QtWidgets.QGroupBox("Preview")
         preview_group.setObjectName("previewGroup")
         preview_layout = QtWidgets.QVBoxLayout(preview_group)
-        preview_label = PreviewViewer()
-        preview_label.setObjectName("previewLabel")
-        preview_layout.addWidget(preview_label)
+        comparison_viewer = ComparisonViewer()
+        comparison_viewer.setObjectName("comparisonViewer")
+        preview_layout.addWidget(comparison_viewer)
 
         metadata_group = QtWidgets.QGroupBox("Metadata")
         metadata_group.setObjectName("metadataGroup")
@@ -264,7 +482,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.input_list = input_list
         self.add_files_button = add_files_button
         self.add_folder_button = add_folder_button
-        self.preview_label = preview_label
+        self.comparison_viewer = comparison_viewer
         self.metadata_summary = metadata_summary
         self.metadata_value_labels = metadata_value_labels
         self.workflow_group = workflow_group
@@ -314,14 +532,16 @@ class MainWindow(QtWidgets.QMainWindow):
                 message = "Select a file to see metadata."
             elif len(items) > 1:
                 message = "Multiple items selected."
-            self.preview_label.set_placeholder("Preview will appear here")
+            self.comparison_viewer.set_before_placeholder("Preview will appear here")
+            self.comparison_viewer.set_after_placeholder("Upscaled preview will appear here")
             self.metadata_summary.setText(message)
             self._set_metadata_placeholders()
             return
 
         selected_path = items[0].text()
         if selected_path == self.input_list.placeholder_text:
-            self.preview_label.set_placeholder("Preview will appear here")
+            self.comparison_viewer.set_before_placeholder("Preview will appear here")
+            self.comparison_viewer.set_after_placeholder("Upscaled preview will appear here")
             self.metadata_summary.setText("Select a file to see metadata.")
             self._set_metadata_placeholders()
             return
@@ -330,16 +550,18 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _load_preview_and_metadata(self, path: str) -> None:
         if not os.path.exists(path):
-            self.preview_label.set_placeholder("Preview unavailable for this file.")
+            self.comparison_viewer.set_before_placeholder("Preview unavailable for this file.")
+            self.comparison_viewer.set_after_placeholder("Upscaled preview will appear here")
             self.metadata_summary.setText("File not found.")
             self._set_metadata_placeholders()
             return
 
         image = self._read_image(path)
         if image is None:
-            self.preview_label.set_placeholder("No preview available for this file.")
+            self.comparison_viewer.set_before_placeholder("No preview available for this file.")
         else:
-            self.preview_label.set_image(image)
+            self.comparison_viewer.set_before_image(image)
+        self.comparison_viewer.set_after_placeholder("Upscaled preview will appear here")
         metadata = self._build_metadata(path)
         filename = metadata.get("Filename", os.path.basename(path))
         self.metadata_summary.setText(f"Metadata for {filename}")
