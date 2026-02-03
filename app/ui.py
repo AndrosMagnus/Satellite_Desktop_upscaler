@@ -8,6 +8,8 @@ import subprocess
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from app.metadata import extract_image_header_info
+
 
 def _format_bytes(size_bytes: int) -> str:
     if size_bytes < 0:
@@ -1551,16 +1553,25 @@ class MainWindow(QtWidgets.QMainWindow):
             "Modified": info.lastModified().toString(QtCore.Qt.DateFormat.ISODate) or "Unknown",
         }
         reader = QtGui.QImageReader(path)
+        fmt_text = None
+        dimensions = None
         if reader.canRead():
             fmt = reader.format()
             fmt_text = fmt.data().decode("ascii", errors="ignore").upper() if fmt else "Unknown"
             size = reader.size()
             if size.isValid():
                 dimensions = f"{size.width()} x {size.height()} px"
-            else:
-                dimensions = "Unknown"
-        else:
+        header_info = extract_image_header_info(path)
+        if header_info is not None:
+            if fmt_text in {None, "Unknown", "Not an image"}:
+                fmt_text = header_info.format
+            elif header_info.format == "GeoTIFF" and fmt_text in {"TIFF", "TIF"}:
+                fmt_text = "GeoTIFF"
+            if dimensions in {None, "Unknown"} and header_info.width and header_info.height:
+                dimensions = f"{header_info.width} x {header_info.height} px"
+        if fmt_text is None:
             fmt_text = "Not an image"
+        if dimensions is None:
             dimensions = "Unknown"
         metadata["Format"] = fmt_text or "Unknown"
         metadata["Dimensions"] = dimensions
