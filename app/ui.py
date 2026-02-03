@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
+import subprocess
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
@@ -19,6 +21,86 @@ def _format_bytes(size_bytes: int) -> str:
             return f"{size:.1f} {unit}"
         size /= 1024
     return f"{size:.1f} TB"
+
+
+def _extract_model_version(weights_url: str) -> str | None:
+    if not weights_url:
+        return None
+    match = re.search(r"/download/(v[^/]+)/", weights_url)
+    if match:
+        return match.group(1)
+    match = re.search(r"\bv\d+\.\d+(?:\.\d+)?\b", weights_url)
+    if match:
+        return match.group(0)
+    return None
+
+
+def _detect_gpu_info() -> str:
+    if shutil.which("nvidia-smi") is None:
+        return "Not detected"
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return "Not detected"
+    lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    if not lines:
+        return "Not detected"
+    return ", ".join(lines)
+
+
+def _detect_cuda_version() -> str:
+    env_version = os.environ.get("CUDA_VERSION")
+    if env_version:
+        return env_version
+    if shutil.which("nvidia-smi") is None:
+        return "Not detected"
+    try:
+        result = subprocess.run(
+            ["nvidia-smi"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return "Not detected"
+    match = re.search(r"CUDA Version:\s*([0-9.]+)", result.stdout)
+    if match:
+        return match.group(1)
+    return "Not detected"
+
+
+def _load_model_registry() -> list[dict[str, object]]:
+    repo_root = os.path.dirname(os.path.dirname(__file__))
+    registry_path = os.path.join(repo_root, "models", "registry.json")
+    try:
+        with open(registry_path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return []
+    if not isinstance(data, list):
+        return []
+    entries: list[dict[str, object]] = []
+    for entry in data:
+        if isinstance(entry, dict):
+            entries.append(entry)
+    return entries
+
+
+def _format_model_versions(models: list[dict[str, object]]) -> str:
+    if not models:
+        return "No models available."
+    lines = []
+    for entry in models:
+        name = str(entry.get("name", "Unknown"))
+        weights_url = str(entry.get("weights_url", ""))
+        version = _extract_model_version(weights_url) or "Unknown"
+        lines.append(f"{name} — {version}")
+    return "\n".join(lines)
 
 
 class PreviewViewer(QtWidgets.QLabel):
@@ -418,24 +500,12 @@ class ModelManagerPanel(QtWidgets.QGroupBox):
         uninstall_button.clicked.connect(self._uninstall_selected_model)
 
     def _load_model_registry(self) -> list[dict[str, object]]:
-        repo_root = os.path.dirname(os.path.dirname(__file__))
-        registry_path = os.path.join(repo_root, "models", "registry.json")
-        try:
-            with open(registry_path, "r", encoding="utf-8") as handle:
-                data = json.load(handle)
-        except (OSError, json.JSONDecodeError):
-            return []
-        if not isinstance(data, list):
-            return []
-
         models: list[dict[str, object]] = []
-        for entry in data:
-            if not isinstance(entry, dict):
-                continue
+        for entry in _load_model_registry():
             name = str(entry.get("name", "Unknown"))
             weights_url = str(entry.get("weights_url", ""))
             bundled = bool(entry.get("bundled"))
-            version = self._extract_version(weights_url)
+            version = _extract_model_version(weights_url)
             versions = ["Latest"]
             if version and version not in versions:
                 versions.insert(0, version)
@@ -449,17 +519,6 @@ class ModelManagerPanel(QtWidgets.QGroupBox):
                 }
             )
         return models
-
-    def _extract_version(self, weights_url: str) -> str | None:
-        if not weights_url:
-            return None
-        match = re.search(r"/download/(v[^/]+)/", weights_url)
-        if match:
-            return match.group(1)
-        match = re.search(r"\bv\d+\.\d+(?:\.\d+)?\b", weights_url)
-        if match:
-            return match.group(0)
-        return None
 
     def _populate_table(self) -> None:
         self.model_table.setRowCount(len(self.models))
@@ -907,6 +966,51 @@ class ExportPresetsPanel(QtWidgets.QGroupBox):
             self.recommended_combo.setCurrentText(name)
 
 
+class SystemInfoPanel(QtWidgets.QGroupBox):
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__("About / System Info", parent)
+        self.setObjectName("systemInfoPanel")
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setSpacing(6)
+
+        helper_text = QtWidgets.QLabel(
+            "Hardware detection may vary by driver availability."
+        )
+        helper_text.setWordWrap(True)
+        helper_text.setObjectName("systemInfoHelper")
+
+        info_form = QtWidgets.QWidget()
+        info_form_layout = QtWidgets.QFormLayout(info_form)
+        info_form_layout.setContentsMargins(0, 0, 0, 0)
+        info_form_layout.setSpacing(6)
+
+        gpu_value = QtWidgets.QLabel(_detect_gpu_info())
+        gpu_value.setObjectName("systemInfoGpuValue")
+        gpu_value.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
+
+        cuda_value = QtWidgets.QLabel(_detect_cuda_version())
+        cuda_value.setObjectName("systemInfoCudaValue")
+        cuda_value.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
+
+        model_versions = QtWidgets.QLabel(_format_model_versions(_load_model_registry()))
+        model_versions.setObjectName("systemInfoModelVersionsValue")
+        model_versions.setWordWrap(True)
+        model_versions.setTextInteractionFlags(
+            QtCore.Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+
+        info_form_layout.addRow("GPU", gpu_value)
+        info_form_layout.addRow("CUDA", cuda_value)
+        info_form_layout.addRow("Model versions", model_versions)
+
+        layout.addWidget(helper_text)
+        layout.addWidget(info_form)
+
+        self.gpu_value = gpu_value
+        self.cuda_value = cuda_value
+        self.model_versions_value = model_versions
+
+
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -1037,6 +1141,8 @@ class MainWindow(QtWidgets.QMainWindow):
         right_layout.addWidget(advanced_options_panel)
         model_manager_panel = ModelManagerPanel()
         right_layout.addWidget(model_manager_panel)
+        system_info_panel = SystemInfoPanel()
+        right_layout.addWidget(system_info_panel)
         right_layout.addStretch(1)
 
         splitter.addWidget(left_panel)
@@ -1065,6 +1171,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.export_presets_panel = export_presets_panel
         self.advanced_options_panel = advanced_options_panel
         self.model_manager_panel = model_manager_panel
+        self.system_info_panel = system_info_panel
 
         add_files_button.clicked.connect(self._select_files)
         add_folder_button.clicked.connect(self._select_folder)

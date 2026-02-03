@@ -173,6 +173,22 @@ class TestPrimaryLayout(unittest.TestCase):
         self.assertEqual(swipe.slider.maximum(), 100)
         self.assertEqual(swipe.slider.value(), 50)
 
+    def test_system_info_panel(self) -> None:
+        from app.ui import MainWindow, SystemInfoPanel
+
+        window = MainWindow()
+        panel = window.system_info_panel
+        self.assertIsInstance(panel, SystemInfoPanel)
+        self.assertEqual(panel.objectName(), "systemInfoPanel")
+        self.assertEqual(panel.gpu_value.objectName(), "systemInfoGpuValue")
+        self.assertEqual(panel.cuda_value.objectName(), "systemInfoCudaValue")
+        self.assertEqual(
+            panel.model_versions_value.objectName(), "systemInfoModelVersionsValue"
+        )
+        self.assertTrue(panel.gpu_value.text())
+        self.assertTrue(panel.cuda_value.text())
+        self.assertIn("Real-ESRGAN", panel.model_versions_value.text())
+
 
 if __name__ == "__main__":
     unittest.main()
