@@ -38,6 +38,26 @@ class TestPrimaryLayout(unittest.TestCase):
         self.assertIsInstance(window.metadata_summary, QtWidgets.QLabel)
         self.assertEqual(window.metadata_summary.objectName(), "metadataSummary")
 
+    def test_workflow_stage_list(self) -> None:
+        from app.ui import MainWindow
+
+        window = MainWindow()
+        self.assertIsInstance(window.workflow_group, QtWidgets.QGroupBox)
+        self.assertEqual(window.workflow_group.objectName(), "workflowGroup")
+        stage_texts = [label.text() for label in window.workflow_stage_labels]
+        self.assertEqual(
+            stage_texts,
+            [
+                "1. Import",
+                "2. Review",
+                "3. Stitch (Optional)",
+                "4. Recommend",
+                "5. Run",
+                "6. Export",
+            ],
+        )
+        self.assertEqual(len(window.workflow_stage_actions), 6)
+
 
 if __name__ == "__main__":
     unittest.main()
