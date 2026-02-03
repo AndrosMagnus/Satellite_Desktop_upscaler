@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import os
+import re
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
@@ -345,6 +347,206 @@ class InputListWidget(QtWidgets.QListWidget):
         event.acceptProposedAction()
 
 
+class ModelManagerPanel(QtWidgets.QGroupBox):
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__("Model Manager", parent)
+        self.setObjectName("modelManagerPanel")
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setSpacing(8)
+
+        model_table = QtWidgets.QTableWidget(0, 3)
+        model_table.setObjectName("modelTable")
+        model_table.setHorizontalHeaderLabels(["Model", "Version", "Status"])
+        model_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+        model_table.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
+        model_table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+        model_table.horizontalHeader().setStretchLastSection(True)
+        model_table.verticalHeader().setVisible(False)
+
+        selection_label = QtWidgets.QLabel("Select a model to manage.")
+        selection_label.setObjectName("modelSelectionLabel")
+        status_label = QtWidgets.QLabel("Status: —")
+        status_label.setObjectName("modelStatusLabel")
+
+        action_row = QtWidgets.QWidget()
+        action_row_layout = QtWidgets.QHBoxLayout(action_row)
+        action_row_layout.setContentsMargins(0, 0, 0, 0)
+        action_row_layout.setSpacing(8)
+        version_label = QtWidgets.QLabel("Version")
+        version_label.setObjectName("modelVersionLabel")
+        version_combo = QtWidgets.QComboBox()
+        version_combo.setObjectName("modelVersionCombo")
+        install_button = QtWidgets.QPushButton("Install")
+        install_button.setObjectName("installModelButton")
+        uninstall_button = QtWidgets.QPushButton("Uninstall")
+        uninstall_button.setObjectName("uninstallModelButton")
+
+        action_row_layout.addWidget(version_label)
+        action_row_layout.addWidget(version_combo, 1)
+        action_row_layout.addWidget(install_button)
+        action_row_layout.addWidget(uninstall_button)
+
+        layout.addWidget(model_table)
+        layout.addWidget(selection_label)
+        layout.addWidget(status_label)
+        layout.addWidget(action_row)
+
+        self.model_table = model_table
+        self.selection_label = selection_label
+        self.status_label = status_label
+        self.version_combo = version_combo
+        self.install_button = install_button
+        self.uninstall_button = uninstall_button
+        self.models = self._load_model_registry()
+        self._populate_table()
+        self._update_action_state()
+
+        model_table.itemSelectionChanged.connect(self._handle_selection_change)
+        version_combo.currentTextChanged.connect(self._apply_selected_version)
+        install_button.clicked.connect(self._install_selected_model)
+        uninstall_button.clicked.connect(self._uninstall_selected_model)
+
+    def _load_model_registry(self) -> list[dict[str, object]]:
+        repo_root = os.path.dirname(os.path.dirname(__file__))
+        registry_path = os.path.join(repo_root, "models", "registry.json")
+        try:
+            with open(registry_path, "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+        except (OSError, json.JSONDecodeError):
+            return []
+        if not isinstance(data, list):
+            return []
+
+        models: list[dict[str, object]] = []
+        for entry in data:
+            if not isinstance(entry, dict):
+                continue
+            name = str(entry.get("name", "Unknown"))
+            weights_url = str(entry.get("weights_url", ""))
+            bundled = bool(entry.get("bundled"))
+            version = self._extract_version(weights_url)
+            versions = ["Latest"]
+            if version and version not in versions:
+                versions.insert(0, version)
+            models.append(
+                {
+                    "name": name,
+                    "bundled": bundled,
+                    "installed": bundled,
+                    "version": versions[0],
+                    "versions": versions,
+                }
+            )
+        return models
+
+    def _extract_version(self, weights_url: str) -> str | None:
+        if not weights_url:
+            return None
+        match = re.search(r"/download/(v[^/]+)/", weights_url)
+        if match:
+            return match.group(1)
+        match = re.search(r"\bv\d+\.\d+(?:\.\d+)?\b", weights_url)
+        if match:
+            return match.group(0)
+        return None
+
+    def _populate_table(self) -> None:
+        self.model_table.setRowCount(len(self.models))
+        for row, model in enumerate(self.models):
+            name_item = QtWidgets.QTableWidgetItem(str(model["name"]))
+            version_item = QtWidgets.QTableWidgetItem(str(model["version"]))
+            status_item = QtWidgets.QTableWidgetItem(self._status_text(model))
+            self.model_table.setItem(row, 0, name_item)
+            self.model_table.setItem(row, 1, version_item)
+            self.model_table.setItem(row, 2, status_item)
+
+    def _status_text(self, model: dict[str, object]) -> str:
+        if model.get("bundled"):
+            return "Bundled"
+        return "Installed" if model.get("installed") else "Not installed"
+
+    def _selected_row(self) -> int | None:
+        selected_rows = self.model_table.selectionModel().selectedRows()
+        if not selected_rows:
+            return None
+        return selected_rows[0].row()
+
+    def _selected_model(self) -> dict[str, object] | None:
+        row = self._selected_row()
+        if row is None or row >= len(self.models):
+            return None
+        return self.models[row]
+
+    def _handle_selection_change(self) -> None:
+        model = self._selected_model()
+        if model is None:
+            self.selection_label.setText("Select a model to manage.")
+            self.status_label.setText("Status: —")
+            self.version_combo.clear()
+            self._update_action_state()
+            return
+
+        self.selection_label.setText(f"Selected: {model['name']}")
+        self.status_label.setText(f"Status: {self._status_text(model)}")
+        self.version_combo.blockSignals(True)
+        self.version_combo.clear()
+        self.version_combo.addItems([str(v) for v in model.get("versions", [])])
+        self.version_combo.setCurrentText(str(model.get("version", "Latest")))
+        self.version_combo.blockSignals(False)
+        self._update_action_state()
+
+    def _apply_selected_version(self, version: str) -> None:
+        row = self._selected_row()
+        if row is None:
+            return
+        model = self.models[row]
+        model["version"] = version
+        version_item = self.model_table.item(row, 1)
+        if version_item is not None:
+            version_item.setText(version)
+
+    def _install_selected_model(self) -> None:
+        model = self._selected_model()
+        if model is None or model.get("bundled"):
+            return
+        model["installed"] = True
+        self._refresh_selected_row()
+
+    def _uninstall_selected_model(self) -> None:
+        model = self._selected_model()
+        if model is None or model.get("bundled"):
+            return
+        model["installed"] = False
+        self._refresh_selected_row()
+
+    def _refresh_selected_row(self) -> None:
+        row = self._selected_row()
+        if row is None:
+            return
+        model = self.models[row]
+        status_item = self.model_table.item(row, 2)
+        if status_item is not None:
+            status_item.setText(self._status_text(model))
+        self.status_label.setText(f"Status: {self._status_text(model)}")
+        self._update_action_state()
+
+    def _update_action_state(self) -> None:
+        model = self._selected_model()
+        if model is None:
+            self.install_button.setEnabled(False)
+            self.uninstall_button.setEnabled(False)
+            self.version_combo.setEnabled(False)
+            return
+        self.version_combo.setEnabled(True)
+        if model.get("bundled"):
+            self.install_button.setEnabled(False)
+            self.uninstall_button.setEnabled(False)
+            return
+        installed = bool(model.get("installed"))
+        self.install_button.setEnabled(not installed)
+        self.uninstall_button.setEnabled(installed)
+
+
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -464,6 +666,8 @@ class MainWindow(QtWidgets.QMainWindow):
         right_layout.addWidget(preview_group)
         right_layout.addWidget(metadata_group)
         right_layout.addWidget(workflow_group)
+        model_manager_panel = ModelManagerPanel()
+        right_layout.addWidget(model_manager_panel)
         right_layout.addStretch(1)
 
         splitter.addWidget(left_panel)
@@ -488,6 +692,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.workflow_group = workflow_group
         self.workflow_stage_labels = workflow_stage_labels
         self.workflow_stage_actions = workflow_stage_actions
+        self.model_manager_panel = model_manager_panel
 
         add_files_button.clicked.connect(self._select_files)
         add_folder_button.clicked.connect(self._select_folder)

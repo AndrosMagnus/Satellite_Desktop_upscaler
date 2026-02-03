@@ -63,6 +63,38 @@ class TestPrimaryLayout(unittest.TestCase):
         )
         self.assertEqual(len(window.workflow_stage_actions), 6)
 
+    def test_model_manager_panel(self) -> None:
+        from app.ui import MainWindow, ModelManagerPanel
+
+        window = MainWindow()
+        panel = window.model_manager_panel
+        self.assertIsInstance(panel, ModelManagerPanel)
+        self.assertEqual(panel.objectName(), "modelManagerPanel")
+        self.assertEqual(panel.model_table.objectName(), "modelTable")
+        self.assertEqual(panel.model_table.columnCount(), 3)
+        self.assertEqual(
+            [
+                panel.model_table.horizontalHeaderItem(index).text()
+                for index in range(panel.model_table.columnCount())
+            ],
+            ["Model", "Version", "Status"],
+        )
+        self.assertGreater(panel.model_table.rowCount(), 0)
+        self.assertEqual(panel.version_combo.objectName(), "modelVersionCombo")
+        self.assertEqual(panel.install_button.objectName(), "installModelButton")
+        self.assertEqual(panel.uninstall_button.objectName(), "uninstallModelButton")
+
+        bundled_row = None
+        for row in range(panel.model_table.rowCount()):
+            item = panel.model_table.item(row, 0)
+            if item and item.text() == "Real-ESRGAN":
+                bundled_row = row
+                break
+        self.assertIsNotNone(bundled_row, "Real-ESRGAN must be listed in the model table")
+        status_item = panel.model_table.item(bundled_row, 2)
+        self.assertIsNotNone(status_item)
+        self.assertEqual(status_item.text(), "Bundled")
+
     def test_comparison_controls(self) -> None:
         from app.ui import MainWindow, PreviewViewer
 
