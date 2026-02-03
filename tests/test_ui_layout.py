@@ -120,6 +120,29 @@ class TestPrimaryLayout(unittest.TestCase):
             window.comparison_viewer.side_by_side.after_title.text().startswith("Model B")
         )
 
+    def test_export_presets_panel(self) -> None:
+        from app.ui import ExportPresetsPanel, MainWindow
+
+        window = MainWindow()
+        panel = window.export_presets_panel
+        self.assertIsInstance(panel, ExportPresetsPanel)
+        self.assertEqual(panel.objectName(), "exportPresetsPanel")
+        self.assertEqual(panel.preset_list.objectName(), "exportPresetList")
+        self.assertEqual(panel.recommended_combo.objectName(), "recommendedPresetCombo")
+        self.assertEqual(
+            panel.use_recommended_button.objectName(), "useRecommendedPresetButton"
+        )
+        self.assertEqual(panel.band_handling_combo.objectName(), "bandHandlingCombo")
+        self.assertEqual(panel.output_format_combo.objectName(), "outputFormatCombo")
+        self.assertGreaterEqual(panel.preset_list.count(), 5)
+        self.assertEqual(panel.preset_list.count(), panel.recommended_combo.count())
+
+        panel.recommended_combo.setCurrentText("Landsat")
+        panel.use_recommended_button.click()
+        current_item = panel.preset_list.currentItem()
+        self.assertIsNotNone(current_item)
+        self.assertEqual(current_item.text(), "Landsat")
+
     def test_advanced_options_panel(self) -> None:
         from app.ui import AdvancedOptionsPanel, MainWindow
 

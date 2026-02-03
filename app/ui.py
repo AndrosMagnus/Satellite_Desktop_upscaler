@@ -756,6 +756,157 @@ class ModelComparisonPanel(QtWidgets.QGroupBox):
         return (before_text, after_text)
 
 
+class ExportPresetsPanel(QtWidgets.QGroupBox):
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__("Export Presets", parent)
+        self.setObjectName("exportPresetsPanel")
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setSpacing(8)
+
+        helper_text = QtWidgets.QLabel(
+            "Choose a preset to configure export settings for common datasets."
+        )
+        helper_text.setWordWrap(True)
+        helper_text.setObjectName("exportPresetsHelper")
+
+        preset_list = QtWidgets.QListWidget()
+        preset_list.setObjectName("exportPresetList")
+        preset_list.setSelectionMode(
+            QtWidgets.QAbstractItemView.SelectionMode.SingleSelection
+        )
+
+        recommended_row = QtWidgets.QWidget()
+        recommended_row_layout = QtWidgets.QHBoxLayout(recommended_row)
+        recommended_row_layout.setContentsMargins(0, 0, 0, 0)
+        recommended_row_layout.setSpacing(6)
+        recommended_label = QtWidgets.QLabel("Recommended preset")
+        recommended_label.setObjectName("recommendedPresetLabel")
+        recommended_combo = QtWidgets.QComboBox()
+        recommended_combo.setObjectName("recommendedPresetCombo")
+        use_recommended_button = QtWidgets.QPushButton("Use recommended")
+        use_recommended_button.setObjectName("useRecommendedPresetButton")
+        recommended_row_layout.addWidget(recommended_label)
+        recommended_row_layout.addWidget(recommended_combo, 1)
+        recommended_row_layout.addWidget(use_recommended_button)
+
+        details_form = QtWidgets.QWidget()
+        details_form_layout = QtWidgets.QFormLayout(details_form)
+        details_form_layout.setContentsMargins(0, 0, 0, 0)
+        details_form_layout.setSpacing(6)
+        band_handling_combo = QtWidgets.QComboBox()
+        band_handling_combo.setObjectName("bandHandlingCombo")
+        band_handling_combo.addItems(["RGB only", "RGB + all bands", "All bands"])
+        output_format_combo = QtWidgets.QComboBox()
+        output_format_combo.setObjectName("outputFormatCombo")
+        output_format_combo.addItems(["Match input", "GeoTIFF", "PNG", "JPEG"])
+        details_form_layout.addRow("Band handling", band_handling_combo)
+        details_form_layout.addRow("Output format", output_format_combo)
+
+        preset_description = QtWidgets.QLabel("Select a preset to see details.")
+        preset_description.setObjectName("presetDescription")
+        preset_description.setWordWrap(True)
+
+        layout.addWidget(helper_text)
+        layout.addWidget(preset_list)
+        layout.addWidget(recommended_row)
+        layout.addWidget(details_form)
+        layout.addWidget(preset_description)
+
+        self.preset_list = preset_list
+        self.recommended_combo = recommended_combo
+        self.use_recommended_button = use_recommended_button
+        self.band_handling_combo = band_handling_combo
+        self.output_format_combo = output_format_combo
+        self.preset_description = preset_description
+
+        self._presets = self._build_presets()
+        self._populate_presets()
+        self._select_initial_preset()
+
+        preset_list.currentRowChanged.connect(self._apply_selected_preset)
+        use_recommended_button.clicked.connect(self._apply_recommended_preset)
+
+    def _build_presets(self) -> list[dict[str, str]]:
+        return [
+            {
+                "name": "Sentinel-2",
+                "description": "Balanced export for Sentinel-2 tiles with multispectral data.",
+                "band_handling": "RGB + all bands",
+                "output_format": "GeoTIFF",
+            },
+            {
+                "name": "PlanetScope",
+                "description": "Optimized for 4-band PlanetScope imagery with RGB focus.",
+                "band_handling": "RGB + all bands",
+                "output_format": "GeoTIFF",
+            },
+            {
+                "name": "Vantor",
+                "description": "High-resolution export with RGB emphasis for WorldView-class data.",
+                "band_handling": "RGB only",
+                "output_format": "GeoTIFF",
+            },
+            {
+                "name": "21AT",
+                "description": (
+                    "Conservative export to preserve high-resolution commercial imagery."
+                ),
+                "band_handling": "RGB only",
+                "output_format": "GeoTIFF",
+            },
+            {
+                "name": "Landsat",
+                "description": "Multispectral-aware export tuned for Landsat scenes.",
+                "band_handling": "All bands",
+                "output_format": "GeoTIFF",
+            },
+        ]
+
+    def _populate_presets(self) -> None:
+        self.preset_list.clear()
+        self.recommended_combo.clear()
+        for preset in self._presets:
+            item = QtWidgets.QListWidgetItem(preset["name"])
+            item.setData(QtCore.Qt.ItemDataRole.UserRole, preset)
+            self.preset_list.addItem(item)
+            self.recommended_combo.addItem(preset["name"])
+
+    def _select_initial_preset(self) -> None:
+        if self.preset_list.count() == 0:
+            return
+        self.preset_list.setCurrentRow(0)
+        self.recommended_combo.setCurrentIndex(0)
+        self._apply_selected_preset(0)
+
+    def _apply_selected_preset(self, row: int) -> None:
+        item = self.preset_list.item(row)
+        if item is None:
+            self.preset_description.setText("Select a preset to see details.")
+            return
+        preset = item.data(QtCore.Qt.ItemDataRole.UserRole)
+        if not isinstance(preset, dict):
+            return
+        self.preset_description.setText(preset.get("description", ""))
+        self.band_handling_combo.setCurrentText(preset.get("band_handling", "RGB only"))
+        self.output_format_combo.setCurrentText(preset.get("output_format", "Match input"))
+
+    def _apply_recommended_preset(self) -> None:
+        self.select_preset(self.recommended_combo.currentText())
+
+    def select_preset(self, name: str) -> None:
+        for index in range(self.preset_list.count()):
+            item = self.preset_list.item(index)
+            if item is None:
+                continue
+            if item.text() == name:
+                self.preset_list.setCurrentRow(index)
+                return
+
+    def set_recommended_preset(self, name: str) -> None:
+        if name and self.recommended_combo.findText(name) >= 0:
+            self.recommended_combo.setCurrentText(name)
+
+
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -880,6 +1031,8 @@ class MainWindow(QtWidgets.QMainWindow):
         right_layout.addWidget(model_comparison_panel)
         right_layout.addWidget(metadata_group)
         right_layout.addWidget(workflow_group)
+        export_presets_panel = ExportPresetsPanel()
+        right_layout.addWidget(export_presets_panel)
         advanced_options_panel = AdvancedOptionsPanel()
         right_layout.addWidget(advanced_options_panel)
         model_manager_panel = ModelManagerPanel()
@@ -909,6 +1062,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.workflow_group = workflow_group
         self.workflow_stage_labels = workflow_stage_labels
         self.workflow_stage_actions = workflow_stage_actions
+        self.export_presets_panel = export_presets_panel
         self.advanced_options_panel = advanced_options_panel
         self.model_manager_panel = model_manager_panel
 
@@ -1014,6 +1168,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._load_preview_and_metadata(selected_path)
 
     def _load_preview_and_metadata(self, path: str) -> None:
+        self._update_recommended_preset(path)
         if not os.path.exists(path):
             self._current_preview_image = None
             if self.model_comparison_panel.is_comparison_mode():
@@ -1054,6 +1209,26 @@ class MainWindow(QtWidgets.QMainWindow):
         filename = metadata.get("Filename", os.path.basename(path))
         self.metadata_summary.setText(f"Metadata for {filename}")
         self._set_metadata(metadata)
+
+    def _update_recommended_preset(self, path: str) -> None:
+        recommendation = self._recommended_preset_for_path(path)
+        if recommendation is None:
+            return
+        self.export_presets_panel.set_recommended_preset(recommendation)
+
+    def _recommended_preset_for_path(self, path: str) -> str | None:
+        lower_path = path.lower()
+        rules = [
+            ("sentinel-2", ["sentinel", "s2"]),
+            ("PlanetScope", ["planetscope", "planet"]),
+            ("Vantor", ["vantor", "worldview"]),
+            ("21AT", ["21at", "triplesat"]),
+            ("Landsat", ["landsat"]),
+        ]
+        for preset_name, tokens in rules:
+            if any(token in lower_path for token in tokens):
+                return preset_name
+        return None
 
     def _read_image(self, path: str) -> QtGui.QImage | None:
         reader = QtGui.QImageReader(path)
