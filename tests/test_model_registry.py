@@ -23,6 +23,7 @@ class TestModelRegistry(unittest.TestCase):
             "source_url",
             "license",
             "license_status",
+            "license_acceptance_required",
             "bundled",
             "gpu_required",
             "cpu_supported",
@@ -51,6 +52,11 @@ class TestModelRegistry(unittest.TestCase):
             )
             self.assertIsInstance(
                 model["license_status"], str, f"Model entry {index} license_status must be str"
+            )
+            self.assertIsInstance(
+                model["license_acceptance_required"],
+                bool,
+                f"Model entry {index} license_acceptance_required must be bool",
             )
             self.assertIsInstance(
                 model["bundled"], bool, f"Model entry {index} bundled must be bool"
@@ -127,6 +133,8 @@ class TestModelRegistry(unittest.TestCase):
 
         models_by_name = {model["name"]: model for model in data if isinstance(model, dict)}
         self.assertIn("SRGAN adapted to EO", models_by_name)
+        self.assertIn("SEN2SR", models_by_name)
+        self.assertIn("LDSR-S2", models_by_name)
         self.assertIn("SenGLEAN", models_by_name)
 
         srgan_model = models_by_name["SRGAN adapted to EO"]
@@ -134,10 +142,44 @@ class TestModelRegistry(unittest.TestCase):
         self.assertEqual(srgan_model["license_status"], "unverified")
         self.assertFalse(srgan_model["bundled"])
 
+        sen2sr_model = models_by_name["SEN2SR"]
+        self.assertEqual(sen2sr_model["license"], "UNVERIFIED")
+        self.assertEqual(sen2sr_model["license_status"], "unverified")
+        self.assertFalse(sen2sr_model["bundled"])
+
+        ldsr_model = models_by_name["LDSR-S2"]
+        self.assertEqual(ldsr_model["license"], "UNVERIFIED")
+        self.assertEqual(ldsr_model["license_status"], "unverified")
+        self.assertFalse(ldsr_model["bundled"])
+
         senglean_model = models_by_name["SenGLEAN"]
         self.assertEqual(senglean_model["license"], "UNVERIFIED")
         self.assertEqual(senglean_model["license_status"], "unverified")
         self.assertFalse(senglean_model["bundled"])
+
+    def test_non_permissive_models_require_license_acceptance(self) -> None:
+        with self.registry_path.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+
+        models_by_name = {model["name"]: model for model in data if isinstance(model, dict)}
+        expected_non_permissive = {
+            "Swin2-MoSE": "GPL-2.0",
+            "DSen2": "GPL-3.0",
+        }
+
+        for name, license_id in expected_non_permissive.items():
+            self.assertIn(name, models_by_name, f"{name} must be listed in registry.json")
+            model = models_by_name[name]
+            self.assertEqual(
+                model["license"],
+                license_id,
+                f"{name} license must be {license_id}",
+            )
+            self.assertFalse(model["bundled"], f"{name} must not be bundled")
+            self.assertTrue(
+                model["license_acceptance_required"],
+                f"{name} must require explicit license acceptance",
+            )
 
 
 if __name__ == "__main__":
