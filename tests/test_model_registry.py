@@ -78,6 +78,31 @@ class TestModelRegistry(unittest.TestCase):
                 model["weights_url"], f"Model entry {index} weights_url must not be empty"
             )
 
+    def test_bundled_model_licenses_permissive(self) -> None:
+        with self.registry_path.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+
+        models_by_name = {model["name"]: model for model in data if isinstance(model, dict)}
+        expected_licenses = {
+            "Real-ESRGAN": "BSD-3-Clause",
+            "Satlas": "Apache-2.0",
+        }
+        permissive_licenses = {"MIT", "BSD-3-Clause", "Apache-2.0"}
+
+        for name, expected_license in expected_licenses.items():
+            self.assertIn(name, models_by_name, f"{name} must be listed in registry.json")
+            license_value = models_by_name[name]["license"]
+            self.assertEqual(
+                license_value,
+                expected_license,
+                f"{name} license must be {expected_license}",
+            )
+            self.assertIn(
+                license_value,
+                permissive_licenses,
+                f"{name} license must be permissive",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,13 +1,25 @@
 [
   {
-    "name": "example-sr-model",
-    "source_url": "https://example.com/models/example-sr-model",
-    "license": "UNKNOWN",
+    "name": "Real-ESRGAN",
+    "source_url": "https://github.com/xinntao/Real-ESRGAN",
+    "license": "BSD-3-Clause",
     "gpu_required": false,
     "cpu_supported": true,
     "bands_supported": ["RGB"],
-    "scales": [2],
-    "weights_url": "https://example.com/models/example-sr-model/weights",
+    "scales": [2, 4],
+    "weights_url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth",
+    "checksum": "sha256:TODO",
+    "default_options": {}
+  },
+  {
+    "name": "Satlas",
+    "source_url": "https://github.com/allenai/satlas-super-resolution",
+    "license": "Apache-2.0",
+    "gpu_required": false,
+    "cpu_supported": true,
+    "bands_supported": ["RGB", "Sentinel-2"],
+    "scales": [4],
+    "weights_url": "https://pub-25c498004d1e4d4c8da69b2c05676836.r2.dev/esrgan_1S2.pth",
     "checksum": "sha256:TODO",
     "default_options": {}
   }
