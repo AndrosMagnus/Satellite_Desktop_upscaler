@@ -1,6 +1,13 @@
 import unittest
 
-from app.recommendation import HardwareProfile, SceneMetadata, _select_scale, recommend_model
+from app.recommendation import (
+    HardwareProfile,
+    ModelOverrides,
+    SceneMetadata,
+    _select_scale,
+    recommend_model,
+    recommend_model_with_overrides,
+)
 
 
 class TestRecommendationEngine(unittest.TestCase):
@@ -75,6 +82,62 @@ class TestRecommendationEngine(unittest.TestCase):
 
     def test_default_scale_when_resolution_unknown(self) -> None:
         self.assertEqual(_select_scale(None, "SEN2SR"), 2)
+
+    def test_override_warnings_for_model_and_options(self) -> None:
+        scene = SceneMetadata(provider="Sentinel-2", band_count=13, resolution_m=10.0)
+        hardware = HardwareProfile(gpu_available=True, vram_gb=8, ram_gb=32)
+        overrides = ModelOverrides(
+            model="Real-ESRGAN",
+            scale=2,
+            tiling=True,
+            precision="fp32",
+        )
+
+        recommendation = recommend_model_with_overrides(scene, hardware, overrides)
+
+        self.assertEqual(recommendation.model, "Real-ESRGAN")
+        self.assertEqual(recommendation.scale, 2)
+        self.assertTrue(recommendation.tiling)
+        self.assertEqual(recommendation.precision, "fp32")
+        self.assertTrue(
+            any(
+                "overrides recommended model" in warning
+                for warning in recommendation.warnings
+            )
+        )
+        self.assertTrue(
+            any(
+                "Scale 2x overrides recommended 4x" in warning
+                for warning in recommendation.warnings
+            )
+        )
+        self.assertTrue(
+            any(
+                "Tiling override set to enabled" in warning
+                for warning in recommendation.warnings
+            )
+        )
+        self.assertTrue(
+            any(
+                "Precision override fp32 replaces recommended fp16" in warning
+                for warning in recommendation.warnings
+            )
+        )
+
+    def test_unsupported_scale_override_keeps_recommendation(self) -> None:
+        scene = SceneMetadata(provider="Sentinel-2", band_count=13, resolution_m=10.0)
+        hardware = HardwareProfile(gpu_available=True, vram_gb=8, ram_gb=32)
+        overrides = ModelOverrides(scale=8)
+
+        recommendation = recommend_model_with_overrides(scene, hardware, overrides)
+
+        self.assertEqual(recommendation.scale, 4)
+        self.assertTrue(
+            any(
+                "Scale 8x is not supported" in warning
+                for warning in recommendation.warnings
+            )
+        )
 
 
 if __name__ == "__main__":

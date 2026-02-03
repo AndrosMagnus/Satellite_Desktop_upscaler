@@ -34,6 +34,14 @@ class ModelRecommendation:
     reason: str
 
 
+@dataclass(frozen=True)
+class ModelOverrides:
+    model: str | None = None
+    scale: int | None = None
+    tiling: bool | None = None
+    precision: str | None = None
+
+
 _MODEL_CAPABILITIES = {
     "Real-ESRGAN": {"gpu_required": False, "cpu_supported": True},
     "Satlas": {"gpu_required": False, "cpu_supported": True},
@@ -117,6 +125,77 @@ def recommend_model(scene: SceneMetadata, hardware: HardwareProfile) -> ModelRec
         precision=precision,
         warnings=tuple(warnings),
         reason=reason,
+    )
+
+
+def recommend_model_with_overrides(
+    scene: SceneMetadata,
+    hardware: HardwareProfile,
+    overrides: ModelOverrides | None = None,
+) -> ModelRecommendation:
+    """Return a recommendation updated with user overrides and warnings."""
+
+    recommendation = recommend_model(scene, hardware)
+    if overrides is None:
+        return recommendation
+    return apply_overrides(recommendation, overrides)
+
+
+def apply_overrides(
+    recommendation: ModelRecommendation, overrides: ModelOverrides
+) -> ModelRecommendation:
+    """Apply user overrides and add warnings when they differ from recommendations."""
+
+    warnings = list(recommendation.warnings)
+    model = recommendation.model
+    scale = recommendation.scale
+    tiling = recommendation.tiling
+    precision = recommendation.precision
+
+    if overrides.model and overrides.model != model:
+        warnings.append(
+            f"Selected model '{overrides.model}' overrides recommended model '{model}'."
+        )
+        model = overrides.model
+
+    if overrides.scale is not None and overrides.scale != scale:
+        supported_scales = _MODEL_SCALES.get(model, ())
+        if supported_scales and overrides.scale not in supported_scales:
+            warnings.append(
+                f"Scale {overrides.scale}x is not supported by {model}; keeping "
+                f"recommended {scale}x."
+            )
+        else:
+            warnings.append(f"Scale {overrides.scale}x overrides recommended {scale}x.")
+            scale = overrides.scale
+
+    if overrides.tiling is not None and overrides.tiling != tiling:
+        enabled_text = "enabled" if tiling else "disabled"
+        override_text = "enabled" if overrides.tiling else "disabled"
+        warnings.append(
+            f"Tiling override set to {override_text}; recommended is {enabled_text}."
+        )
+        tiling = overrides.tiling
+
+    if overrides.precision and overrides.precision.lower() != precision.lower():
+        normalized = overrides.precision.lower()
+        if normalized not in {"fp16", "fp32"}:
+            warnings.append(
+                f"Precision override '{overrides.precision}' is invalid; keeping {precision}."
+            )
+        else:
+            warnings.append(
+                f"Precision override {normalized} replaces recommended {precision}."
+            )
+            precision = normalized
+
+    return ModelRecommendation(
+        model=model,
+        scale=scale,
+        tiling=tiling,
+        precision=precision,
+        warnings=tuple(warnings),
+        reason=recommendation.reason,
     )
 
 
