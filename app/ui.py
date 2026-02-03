@@ -5,10 +5,12 @@ import os
 import re
 import shutil
 import subprocess
+from collections.abc import Callable
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from app.band_handling import BandHandling, ExportSettings
+from app.error_handling import UserFacingError, as_user_facing_error
 from app.mosaic_detection import preview_stitch_bounds, suggest_mosaic
 from app.metadata import extract_image_header_info
 
@@ -442,6 +444,78 @@ class InputListWidget(QtWidgets.QListWidget):
                 paths.append(local_path)
         self.add_paths(paths)
         event.acceptProposedAction()
+
+
+class ErrorDialog(QtWidgets.QDialog):
+    def __init__(
+        self,
+        error: UserFacingError,
+        retry_action: Callable[[], None] | None = None,
+        parent: QtWidgets.QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(error.title)
+        self.setObjectName("errorDialog")
+        self._retry_action = retry_action
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setSpacing(10)
+
+        title = QtWidgets.QLabel(error.title)
+        title.setObjectName("errorTitleLabel")
+        title.setStyleSheet("font-weight: 600;")
+
+        summary = QtWidgets.QLabel(error.summary)
+        summary.setObjectName("errorSummaryLabel")
+        summary.setWordWrap(True)
+
+        layout.addWidget(title)
+        layout.addWidget(summary)
+
+        suggestion_container = QtWidgets.QWidget()
+        suggestion_layout = QtWidgets.QVBoxLayout(suggestion_container)
+        suggestion_layout.setContentsMargins(0, 0, 0, 0)
+        suggestion_layout.setSpacing(4)
+
+        suggestion_header = QtWidgets.QLabel("Suggested fixes")
+        suggestion_header.setObjectName("errorSuggestedHeader")
+        suggestion_layout.addWidget(suggestion_header)
+
+        self.suggestion_labels: list[QtWidgets.QLabel] = []
+        if error.suggested_fixes:
+            for fix in error.suggested_fixes:
+                label = QtWidgets.QLabel(f"• {fix}")
+                label.setObjectName("errorSuggestedFix")
+                label.setWordWrap(True)
+                suggestion_layout.addWidget(label)
+                self.suggestion_labels.append(label)
+        else:
+            label = QtWidgets.QLabel("No suggestions available.")
+            label.setObjectName("errorSuggestedFix")
+            suggestion_layout.addWidget(label)
+            self.suggestion_labels.append(label)
+
+        layout.addWidget(suggestion_container)
+
+        code_label = QtWidgets.QLabel(f"Error code: {error.error_code}")
+        code_label.setObjectName("errorCodeLabel")
+        layout.addWidget(code_label)
+
+        button_box = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.StandardButton.Close)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+
+        self.retry_button: QtWidgets.QPushButton | None = None
+        if retry_action is not None and error.can_retry:
+            self.retry_button = QtWidgets.QPushButton("Retry")
+            self.retry_button.setObjectName("errorRetryButton")
+            self.retry_button.clicked.connect(self._handle_retry)
+            button_box.addButton(self.retry_button, QtWidgets.QDialogButtonBox.ButtonRole.AcceptRole)
+
+    def _handle_retry(self) -> None:
+        if self._retry_action is not None:
+            self._retry_action()
+        self.accept()
 
 
 class ModelManagerPanel(QtWidgets.QGroupBox):
@@ -1409,6 +1483,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.model_manager_panel = model_manager_panel
         self.changelog_panel = changelog_panel
         self.system_info_panel = system_info_panel
+        self.run_button: QtWidgets.QPushButton | None = None
 
         add_files_button.clicked.connect(self._select_files)
         add_folder_button.clicked.connect(self._select_folder)
@@ -1430,6 +1505,7 @@ class MainWindow(QtWidgets.QMainWindow):
             advanced_options_panel.completion_notification_check.isChecked()
         )
         self._wire_workflow_completion_notifications()
+        self._wire_run_action()
 
     def _configure_shortcuts(self) -> None:
         self.add_files_button.setShortcut(QtGui.QKeySequence("Ctrl+O"))
@@ -1469,6 +1545,66 @@ class MainWindow(QtWidgets.QMainWindow):
         title = f"{stage_name} complete"
         message = f"{stage_name} finished. You're ready for the next step."
         self.notification_manager.notify(title, message, parent=self)
+
+    def _wire_run_action(self) -> None:
+        if "Run" not in self.workflow_stage_names:
+            return
+        run_index = self.workflow_stage_names.index("Run")
+        if run_index >= len(self.workflow_stage_actions):
+            return
+        self.run_button = self.workflow_stage_actions[run_index]
+        self.run_button.clicked.connect(self._handle_run_clicked)
+
+    def _handle_run_clicked(self) -> None:
+        try:
+            self._start_run()
+        except Exception as exc:  # noqa: BLE001
+            self._show_error_dialog(exc, retry_action=self._handle_run_clicked)
+
+    def _start_run(self) -> None:
+        selected_paths = self._selected_input_paths()
+        if not selected_paths:
+            raise UserFacingError(
+                title="Nothing to run",
+                summary="No input files are selected yet.",
+                suggested_fixes=(
+                    "Add one or more files to the list.",
+                    "Select a file before starting a run.",
+                ),
+                error_code="INPUT-001",
+                can_retry=True,
+            )
+
+        missing_paths = [path for path in selected_paths if not os.path.exists(path)]
+        if missing_paths:
+            sample_paths = ", ".join(missing_paths[:3])
+            if len(missing_paths) > 3:
+                sample_paths = f"{sample_paths}, and {len(missing_paths) - 3} more"
+            raise UserFacingError(
+                title="Input file missing",
+                summary="One or more selected inputs can no longer be found on disk.",
+                suggested_fixes=(
+                    f"Verify these paths still exist: {sample_paths}.",
+                    "Re-add the files or update your selection.",
+                ),
+                error_code="IO-001",
+                can_retry=True,
+            )
+
+    def _selected_input_paths(self) -> list[str]:
+        paths = [item.text() for item in self.input_list.selectedItems()]
+        if paths == [self.input_list.placeholder_text]:
+            return []
+        return [path for path in paths if path]
+
+    def _show_error_dialog(
+        self,
+        exc: Exception,
+        retry_action: Callable[[], None] | None = None,
+    ) -> None:
+        error = as_user_facing_error(exc)
+        dialog = ErrorDialog(error, retry_action=retry_action, parent=self)
+        dialog.exec()
 
     def _select_files(self) -> None:
         files, _ = QtWidgets.QFileDialog.getOpenFileNames(
