@@ -24,3 +24,6 @@
    ```powershell
    python backend/main.py
    ```
+
+## Tech stack
+See `docs/tech_stack.md` for the current main stack decisions.
