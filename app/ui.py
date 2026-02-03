@@ -8,6 +8,7 @@ import subprocess
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from app.band_handling import BandHandling, ExportSettings
 from app.metadata import extract_image_header_info
 
 
@@ -863,7 +864,7 @@ class ExportPresetsPanel(QtWidgets.QGroupBox):
         details_form_layout.setSpacing(6)
         band_handling_combo = QtWidgets.QComboBox()
         band_handling_combo.setObjectName("bandHandlingCombo")
-        band_handling_combo.addItems(["RGB only", "RGB + all bands", "All bands"])
+        band_handling_combo.addItems(BandHandling.labels())
         output_format_combo = QtWidgets.QComboBox()
         output_format_combo.setObjectName("outputFormatCombo")
         output_format_combo.addItems(["Match input", "GeoTIFF", "PNG", "JPEG"])
@@ -955,7 +956,9 @@ class ExportPresetsPanel(QtWidgets.QGroupBox):
         if not isinstance(preset, dict):
             return
         self.preset_description.setText(preset.get("description", ""))
-        self.band_handling_combo.setCurrentText(preset.get("band_handling", "RGB only"))
+        self.band_handling_combo.setCurrentText(
+            preset.get("band_handling", BandHandling.RGB_ONLY.value)
+        )
         self.output_format_combo.setCurrentText(preset.get("output_format", "Match input"))
 
     def _apply_recommended_preset(self) -> None:
@@ -973,6 +976,27 @@ class ExportPresetsPanel(QtWidgets.QGroupBox):
     def set_recommended_preset(self, name: str) -> None:
         if name and self.recommended_combo.findText(name) >= 0:
             self.recommended_combo.setCurrentText(name)
+
+    def selected_band_handling(self) -> BandHandling:
+        return BandHandling.from_label(self.band_handling_combo.currentText())
+
+    def selected_output_format(self) -> str:
+        return self.output_format_combo.currentText()
+
+    def export_settings(self) -> ExportSettings:
+        return ExportSettings(
+            band_handling=self.selected_band_handling(),
+            output_format=self.selected_output_format(),
+        )
+
+    def set_band_handling(self, band_handling: BandHandling | str) -> None:
+        label = (
+            band_handling.value
+            if isinstance(band_handling, BandHandling)
+            else band_handling
+        )
+        if self.band_handling_combo.findText(label) >= 0:
+            self.band_handling_combo.setCurrentText(label)
 
 
 class SystemInfoPanel(QtWidgets.QGroupBox):

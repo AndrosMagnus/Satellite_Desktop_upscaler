@@ -154,6 +154,18 @@ class TestPrimaryLayout(unittest.TestCase):
         self.assertIsNotNone(current_item)
         self.assertEqual(current_item.text(), "Landsat")
 
+    def test_band_handling_selection(self) -> None:
+        from app.band_handling import BandHandling
+        from app.ui import MainWindow
+
+        window = MainWindow()
+        panel = window.export_presets_panel
+        self.assertEqual(panel.selected_band_handling(), BandHandling.RGB_PLUS_ALL)
+
+        panel.set_band_handling(BandHandling.ALL_BANDS)
+        settings = panel.export_settings()
+        self.assertEqual(settings.band_handling, BandHandling.ALL_BANDS)
+
     def test_advanced_options_panel(self) -> None:
         from app.ui import AdvancedOptionsPanel, MainWindow
 
