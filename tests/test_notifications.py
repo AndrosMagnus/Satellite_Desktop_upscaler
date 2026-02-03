@@ -57,6 +57,21 @@ class TestCompletionNotifications(unittest.TestCase):
             [("Run complete", "Run finished. You're ready for the next step.")],
         )
 
+    def test_notification_manager_disabled_by_default(self) -> None:
+        from app.ui import MainWindow
+
+        fake_manager = _FakeNotificationManager()
+        fake_manager.enabled = True
+
+        window = MainWindow(notification_manager=fake_manager)
+        notification_check = window.advanced_options_panel.completion_notification_check
+
+        self.assertFalse(notification_check.isChecked())
+        self.assertFalse(fake_manager.enabled)
+
+        window.workflow_stage_actions[4].click()
+        self.assertEqual(fake_manager.calls, [])
+
     def test_export_completion_notification(self) -> None:
         from app.ui import MainWindow
 

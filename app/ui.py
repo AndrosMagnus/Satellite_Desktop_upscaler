@@ -1339,6 +1339,9 @@ class MainWindow(QtWidgets.QMainWindow):
         advanced_options_panel.completion_notification_check.toggled.connect(
             self._set_completion_notifications_enabled
         )
+        self._set_completion_notifications_enabled(
+            advanced_options_panel.completion_notification_check.isChecked()
+        )
         self._wire_workflow_completion_notifications()
 
     def _configure_shortcuts(self) -> None:
