@@ -95,6 +95,24 @@ class TestPrimaryLayout(unittest.TestCase):
         self.assertIsNotNone(status_item)
         self.assertEqual(status_item.text(), "Bundled")
 
+    def test_advanced_options_panel(self) -> None:
+        from app.ui import AdvancedOptionsPanel, MainWindow
+
+        window = MainWindow()
+        panel = window.advanced_options_panel
+        self.assertIsInstance(panel, AdvancedOptionsPanel)
+        self.assertEqual(panel.objectName(), "advancedOptionsPanel")
+        self.assertEqual(panel.toggle_button.objectName(), "advancedOptionsToggle")
+        self.assertEqual(panel.content_area.objectName(), "advancedOptionsContent")
+        self.assertFalse(panel.toggle_button.isChecked())
+        self.assertTrue(panel.content_area.isHidden())
+        self.assertEqual(panel.toggle_button.arrowType(), QtCore.Qt.ArrowType.RightArrow)
+
+        panel.toggle_button.toggle()
+        self.assertTrue(panel.toggle_button.isChecked())
+        self.assertFalse(panel.content_area.isHidden())
+        self.assertEqual(panel.toggle_button.arrowType(), QtCore.Qt.ArrowType.DownArrow)
+
     def test_comparison_controls(self) -> None:
         from app.ui import MainWindow, PreviewViewer
 

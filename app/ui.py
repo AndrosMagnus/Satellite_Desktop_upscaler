@@ -547,6 +547,73 @@ class ModelManagerPanel(QtWidgets.QGroupBox):
         self.uninstall_button.setEnabled(installed)
 
 
+class CollapsiblePanel(QtWidgets.QWidget):
+    def __init__(self, title: str, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.toggle_button = QtWidgets.QToolButton()
+        self.toggle_button.setText(title)
+        self.toggle_button.setCheckable(True)
+        self.toggle_button.setChecked(False)
+        self.toggle_button.setToolButtonStyle(
+            QtCore.Qt.ToolButtonStyle.ToolButtonTextBesideIcon
+        )
+        self.toggle_button.setArrowType(QtCore.Qt.ArrowType.RightArrow)
+
+        self.content_area = QtWidgets.QWidget()
+        self.content_area.setVisible(False)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        layout.addWidget(self.toggle_button)
+        layout.addWidget(self.content_area)
+
+        self.toggle_button.toggled.connect(self._toggle_content)
+
+    def _toggle_content(self, expanded: bool) -> None:
+        self.content_area.setVisible(expanded)
+        self.toggle_button.setArrowType(
+            QtCore.Qt.ArrowType.DownArrow if expanded else QtCore.Qt.ArrowType.RightArrow
+        )
+
+
+class AdvancedOptionsPanel(CollapsiblePanel):
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__("Advanced Options", parent)
+        self.setObjectName("advancedOptionsPanel")
+        self.toggle_button.setObjectName("advancedOptionsToggle")
+        self.content_area.setObjectName("advancedOptionsContent")
+
+        content_layout = QtWidgets.QFormLayout(self.content_area)
+        content_layout.setContentsMargins(12, 0, 12, 0)
+        content_layout.setSpacing(8)
+
+        scale_combo = QtWidgets.QComboBox()
+        scale_combo.setObjectName("advancedScaleCombo")
+        scale_combo.addItems(["2x", "4x", "8x"])
+
+        tiling_combo = QtWidgets.QComboBox()
+        tiling_combo.setObjectName("advancedTilingCombo")
+        tiling_combo.addItems(["Auto", "512 px", "1024 px"])
+
+        precision_combo = QtWidgets.QComboBox()
+        precision_combo.setObjectName("advancedPrecisionCombo")
+        precision_combo.addItems(["Auto", "FP16", "FP32"])
+
+        seam_blend_check = QtWidgets.QCheckBox("Enable seam blending")
+        seam_blend_check.setObjectName("advancedSeamBlendCheck")
+
+        content_layout.addRow("Scale factor", scale_combo)
+        content_layout.addRow("Tiling strategy", tiling_combo)
+        content_layout.addRow("Precision", precision_combo)
+        content_layout.addRow("", seam_blend_check)
+
+        self.scale_combo = scale_combo
+        self.tiling_combo = tiling_combo
+        self.precision_combo = precision_combo
+        self.seam_blend_check = seam_blend_check
+
+
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -666,6 +733,8 @@ class MainWindow(QtWidgets.QMainWindow):
         right_layout.addWidget(preview_group)
         right_layout.addWidget(metadata_group)
         right_layout.addWidget(workflow_group)
+        advanced_options_panel = AdvancedOptionsPanel()
+        right_layout.addWidget(advanced_options_panel)
         model_manager_panel = ModelManagerPanel()
         right_layout.addWidget(model_manager_panel)
         right_layout.addStretch(1)
@@ -692,6 +761,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.workflow_group = workflow_group
         self.workflow_stage_labels = workflow_stage_labels
         self.workflow_stage_actions = workflow_stage_actions
+        self.advanced_options_panel = advanced_options_panel
         self.model_manager_panel = model_manager_panel
 
         add_files_button.clicked.connect(self._select_files)
