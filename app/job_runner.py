@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import threading
 import time
-from dataclasses import dataclass
+from concurrent.futures import CancelledError
+from dataclasses import dataclass, field
 from typing import Callable
 
 from app.structured_logging import StructuredLogger
@@ -13,6 +15,8 @@ class Job:
     total_units: int
     work: Callable[[int], None]
     description: str | None = None
+    cancel_token: "JobCancellationToken" = field(default_factory=lambda: JobCancellationToken())
+    on_cancel: Callable[[], None] | None = None
 
 
 @dataclass(frozen=True)
@@ -53,6 +57,22 @@ class JobRunner:
         completed = 0
         total_duration = 0.0
 
+        def _handle_cancel() -> None:
+            if job.on_cancel:
+                job.on_cancel()
+            if self._logger:
+                duration_ms = int((self._time() - start_time) * 1000)
+                self._logger.log_event(
+                    "INFO",
+                    "job_cancelled",
+                    "Job cancelled",
+                    job_id=job.job_id,
+                    completed_units=completed,
+                    total_units=job.total_units,
+                    duration_ms=duration_ms,
+                )
+            raise CancelledError("Job cancelled")
+
         if self._logger:
             self._logger.log_event(
                 "INFO",
@@ -64,7 +84,11 @@ class JobRunner:
             )
 
         try:
+            if job.cancel_token.is_cancelled():
+                _handle_cancel()
             for unit_index in range(job.total_units):
+                if job.cancel_token.is_cancelled():
+                    _handle_cancel()
                 unit_start = self._time()
                 job.work(unit_index)
                 unit_end = self._time()
@@ -72,6 +96,9 @@ class JobRunner:
                 duration = unit_end - unit_start
                 total_duration += duration
                 completed += 1
+
+                if job.cancel_token.is_cancelled():
+                    _handle_cancel()
 
                 average_unit = total_duration / completed
                 remaining = job.total_units - completed
@@ -99,6 +126,8 @@ class JobRunner:
                         progress=progress.progress,
                         eta_seconds=eta_seconds,
                     )
+        except CancelledError:
+            raise
         except Exception as exc:  # noqa: BLE001
             if self._logger:
                 self._logger.log_event(
@@ -129,3 +158,14 @@ class JobRunner:
             total_units=job.total_units,
             duration_ms=duration_ms,
         )
+
+
+class JobCancellationToken:
+    def __init__(self) -> None:
+        self._event = threading.Event()
+
+    def cancel(self) -> None:
+        self._event.set()
+
+    def is_cancelled(self) -> bool:
+        return self._event.is_set()

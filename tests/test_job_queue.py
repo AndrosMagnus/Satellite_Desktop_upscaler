@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 import unittest
+from concurrent.futures import CancelledError
 
 from app.job_queue import JobQueue
 from app.job_runner import Job
@@ -63,4 +64,31 @@ class TestJobQueue(unittest.TestCase):
         with self.assertRaises(ValueError):
             future.result(timeout=2.0)
 
+        queue.shutdown()
+
+    def test_job_cancellation_discards_partial_outputs(self) -> None:
+        queue = JobQueue()
+        outputs: list[str] = []
+        started = threading.Event()
+        release = threading.Event()
+
+        def work(_: int) -> None:
+            outputs.append("partial-output")
+            started.set()
+            release.wait(timeout=2.0)
+
+        def on_cancel() -> None:
+            outputs.clear()
+
+        job = Job(job_id="job-5", total_units=2, work=work, on_cancel=on_cancel)
+        future = queue.submit(job)
+
+        self.assertTrue(started.wait(timeout=2.0))
+        self.assertTrue(queue.cancel(future))
+        release.set()
+
+        with self.assertRaises(CancelledError):
+            future.result(timeout=2.0)
+
+        self.assertEqual(outputs, [])
         queue.shutdown()

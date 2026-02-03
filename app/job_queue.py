@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import threading
-from concurrent.futures import Future
+from concurrent.futures import CancelledError, Future
 from dataclasses import dataclass
 from queue import Empty, Queue
 from typing import Callable
@@ -32,6 +32,8 @@ class JobQueue:
         self._queue: Queue[_QueueItem | object] = Queue()
         self._shutdown = threading.Event()
         self._sentinel = object()
+        self._lock = threading.Lock()
+        self._items_by_future: dict[Future[JobResult], _QueueItem] = {}
         self._thread = threading.Thread(
             target=self._worker,
             name="job-queue",
@@ -47,8 +49,20 @@ class JobQueue:
         if self._shutdown.is_set():
             raise RuntimeError("JobQueue is shut down")
         future: Future[JobResult] = Future()
-        self._queue.put(_QueueItem(job=job, on_progress=on_progress, future=future))
+        item = _QueueItem(job=job, on_progress=on_progress, future=future)
+        with self._lock:
+            self._items_by_future[future] = item
+        self._queue.put(item)
         return future
+
+    def cancel(self, future: Future[JobResult]) -> bool:
+        with self._lock:
+            item = self._items_by_future.get(future)
+        if not item:
+            return False
+        item.job.cancel_token.cancel()
+        future.cancel()
+        return True
 
     def shutdown(self, wait: bool = True) -> None:
         if self._shutdown.is_set():
@@ -73,15 +87,19 @@ class JobQueue:
                 break
 
             assert isinstance(item, _QueueItem)
-            if not item.future.set_running_or_notify_cancel():
-                self._queue.task_done()
-                continue
-
             try:
-                result = self._runner.run(item.job, on_progress=item.on_progress)
-            except Exception as exc:  # noqa: BLE001
-                item.future.set_exception(exc)
-            else:
-                item.future.set_result(result)
+                if not item.future.set_running_or_notify_cancel():
+                    continue
+
+                try:
+                    result = self._runner.run(item.job, on_progress=item.on_progress)
+                except CancelledError as exc:
+                    item.future.set_exception(exc)
+                except Exception as exc:  # noqa: BLE001
+                    item.future.set_exception(exc)
+                else:
+                    item.future.set_result(result)
             finally:
+                with self._lock:
+                    self._items_by_future.pop(item.future, None)
                 self._queue.task_done()

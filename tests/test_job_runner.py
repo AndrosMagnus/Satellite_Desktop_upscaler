@@ -3,9 +3,10 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from concurrent.futures import CancelledError
 from pathlib import Path
 
-from app.job_runner import Job, JobRunner
+from app.job_runner import Job, JobCancellationToken, JobRunner
 from app.structured_logging import StructuredLogger
 
 
@@ -69,3 +70,31 @@ class TestJobRunner(unittest.TestCase):
                 self.assertIn("component", payload)
                 self.assertIn("event", payload)
                 self.assertIn("message", payload)
+
+    def test_job_runner_cancellation_discards_outputs(self) -> None:
+        cancel_token = JobCancellationToken()
+        outputs: list[str] = []
+        progress_updates = []
+
+        def work(unit_index: int) -> None:
+            outputs.append(f"chunk-{unit_index}")
+            if unit_index == 0:
+                cancel_token.cancel()
+
+        def on_cancel() -> None:
+            outputs.clear()
+
+        runner = JobRunner()
+        job = Job(
+            job_id="job-cancel",
+            total_units=3,
+            work=work,
+            cancel_token=cancel_token,
+            on_cancel=on_cancel,
+        )
+
+        with self.assertRaises(CancelledError):
+            runner.run(job, on_progress=progress_updates.append)
+
+        self.assertEqual(outputs, [])
+        self.assertEqual(progress_updates, [])
