@@ -1,8 +1,8 @@
 # Project Task Breakdown (from PRD)
 
 ## 0. Project Foundations
-- [ ] Confirm repo structure and create baseline folders (`app/`, `backend/`, `models/`, `docs/`, `scripts/`, `tests/`).
-- [ ] Define OS targets in build tooling: Windows 10+, macOS 12+, Ubuntu 20.04+.
+- [x] Confirm repo structure and create baseline folders (`app/`, `backend/`, `models/`, `docs/`, `scripts/`, `tests/`).
+- [x] Define OS targets in build tooling: Windows 10+, macOS 12+, Ubuntu 20.04+.
 - [ ] Define hardware targets: 16 GB RAM, 6 GB VRAM; document CPU fallback expectations.
 - [ ] Choose and document main tech stack:
   - UI: Qt (PySide6).
