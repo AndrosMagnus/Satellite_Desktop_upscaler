@@ -1,6 +1,6 @@
 import unittest
 
-from app.provider_detection import detect_provider
+from app.provider_detection import detect_provider, recommend_provider
 
 
 class TestProviderDetection(unittest.TestCase):
@@ -27,6 +27,20 @@ class TestProviderDetection(unittest.TestCase):
     def test_returns_none_when_unknown(self) -> None:
         path = "/exports/scene_foo_bar_2024.tif"
         self.assertIsNone(detect_provider(path))
+
+    def test_returns_none_when_ambiguous(self) -> None:
+        path = "/data/sentinel_landsat_s2a_lc08_scene.tif"
+        self.assertIsNone(detect_provider(path))
+
+    def test_recommendation_reports_ambiguity(self) -> None:
+        path = "/data/sentinel_landsat_s2a_lc08_scene.tif"
+        recommendation = recommend_provider(path)
+        self.assertTrue(recommendation.ambiguous)
+        self.assertIsNone(recommendation.best)
+        self.assertCountEqual(
+            [candidate.name for candidate in recommendation.candidates],
+            ["Sentinel-2", "Landsat"],
+        )
 
 
 if __name__ == "__main__":

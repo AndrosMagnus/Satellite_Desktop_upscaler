@@ -12,11 +12,25 @@ class ProviderMatch:
     score: int
 
 
+@dataclass(frozen=True)
+class ProviderRecommendation:
+    best: str | None
+    candidates: tuple[ProviderMatch, ...]
+    ambiguous: bool
+
+
 _TOKEN_SPLIT_RE = re.compile(r"[^a-z0-9]+")
 
 
 def detect_provider(path: str) -> str | None:
     """Return the best matching provider name for a given file path."""
+
+    recommendation = recommend_provider(path)
+    return recommendation.best
+
+
+def recommend_provider(path: str) -> ProviderRecommendation:
+    """Return provider recommendation details, including ambiguity signals."""
 
     normalized = path.lower()
     tokens = [token for token in _TOKEN_SPLIT_RE.split(normalized) if token]
@@ -28,8 +42,15 @@ def detect_provider(path: str) -> str | None:
         _score_21at(tokens, normalized),
         _score_landsat(tokens, normalized),
     ]
-    best = max(matches, key=lambda match: match.score)
-    return best.name if best.score >= 3 else None
+    ranked = sorted(matches, key=lambda match: (-match.score, match.name))
+    viable = [match for match in ranked if match.score >= 3]
+    if not viable:
+        return ProviderRecommendation(None, tuple(), False)
+    top_score = viable[0].score
+    tied = [match for match in viable if match.score == top_score]
+    if len(tied) > 1:
+        return ProviderRecommendation(None, tuple(tied), True)
+    return ProviderRecommendation(viable[0].name, tuple(viable), False)
 
 
 def _score_sentinel(tokens: list[str], normalized: str) -> ProviderMatch:

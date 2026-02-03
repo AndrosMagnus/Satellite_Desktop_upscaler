@@ -1522,9 +1522,34 @@ class MainWindow(QtWidgets.QMainWindow):
         self.export_presets_panel.set_recommended_preset(recommendation)
 
     def _recommended_preset_for_path(self, path: str) -> str | None:
-        from app.provider_detection import detect_provider
+        from app.provider_detection import recommend_provider
 
-        return detect_provider(path)
+        recommendation = recommend_provider(path)
+        if recommendation.ambiguous:
+            return self._prompt_for_provider_selection(recommendation.candidates)
+        return recommendation.best
+
+    def _prompt_for_provider_selection(
+        self, candidates: tuple["ProviderMatch", ...]
+    ) -> str | None:
+        if not candidates:
+            return None
+        names = [candidate.name for candidate in candidates]
+        message = (
+            "Multiple providers match this file. Choose the correct provider to set "
+            "the recommended export preset."
+        )
+        selection, accepted = QtWidgets.QInputDialog.getItem(
+            self,
+            "Select provider",
+            message,
+            names,
+            0,
+            False,
+        )
+        if accepted and selection:
+            return selection
+        return None
 
     def _read_image(self, path: str) -> QtGui.QImage | None:
         reader = QtGui.QImageReader(path)
