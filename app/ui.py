@@ -673,15 +673,22 @@ class AdvancedOptionsPanel(CollapsiblePanel):
         seam_blend_check = QtWidgets.QCheckBox("Enable seam blending")
         seam_blend_check.setObjectName("advancedSeamBlendCheck")
 
+        completion_notification_check = QtWidgets.QCheckBox(
+            "Desktop notification on completion"
+        )
+        completion_notification_check.setObjectName("advancedCompletionNotifyCheck")
+
         content_layout.addRow("Scale factor", scale_combo)
         content_layout.addRow("Tiling strategy", tiling_combo)
         content_layout.addRow("Precision", precision_combo)
         content_layout.addRow("", seam_blend_check)
+        content_layout.addRow("", completion_notification_check)
 
         self.scale_combo = scale_combo
         self.tiling_combo = tiling_combo
         self.precision_combo = precision_combo
         self.seam_blend_check = seam_blend_check
+        self.completion_notification_check = completion_notification_check
 
 
 class ModelComparisonPanel(QtWidgets.QGroupBox):
@@ -1146,8 +1153,11 @@ class ChangelogPanel(QtWidgets.QGroupBox):
 
 
 class MainWindow(QtWidgets.QMainWindow):
-    def __init__(self) -> None:
+    def __init__(
+        self, notification_manager: "DesktopNotificationManager | None" = None
+    ) -> None:
         super().__init__()
+        self.notification_manager = notification_manager or DesktopNotificationManager()
         self.setWindowTitle("Satellite Upscale")
         self._build_ui()
         self._configure_shortcuts()
@@ -1265,6 +1275,7 @@ class MainWindow(QtWidgets.QMainWindow):
             workflow_stage_labels.append(stage_label)
             workflow_stage_actions.append(stage_action)
         workflow_layout.addStretch(1)
+        workflow_stage_names = [stage_label for stage_label, _ in workflow_stages]
 
         right_layout.addWidget(preview_group)
         right_layout.addWidget(model_comparison_panel)
@@ -1305,6 +1316,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.workflow_group = workflow_group
         self.workflow_stage_labels = workflow_stage_labels
         self.workflow_stage_actions = workflow_stage_actions
+        self.workflow_stage_names = workflow_stage_names
         self.export_presets_panel = export_presets_panel
         self.advanced_options_panel = advanced_options_panel
         self.model_manager_panel = model_manager_panel
@@ -1324,6 +1336,10 @@ class MainWindow(QtWidgets.QMainWindow):
         model_comparison_panel.model_b_combo.currentTextChanged.connect(
             self._update_comparison_state
         )
+        advanced_options_panel.completion_notification_check.toggled.connect(
+            self._set_completion_notifications_enabled
+        )
+        self._wire_workflow_completion_notifications()
 
     def _configure_shortcuts(self) -> None:
         self.add_files_button.setShortcut(QtGui.QKeySequence("Ctrl+O"))
@@ -1340,6 +1356,29 @@ class MainWindow(QtWidgets.QMainWindow):
             self.workflow_stage_actions, workflow_shortcuts, strict=True
         ):
             action_button.setShortcut(QtGui.QKeySequence(shortcut))
+
+    def _set_completion_notifications_enabled(self, enabled: bool) -> None:
+        self.notification_manager.set_enabled(enabled)
+
+    def _wire_workflow_completion_notifications(self) -> None:
+        completion_targets = {
+            4: "Run",
+            5: "Export",
+        }
+        for index, stage_name in completion_targets.items():
+            if index >= len(self.workflow_stage_actions):
+                continue
+            button = self.workflow_stage_actions[index]
+            button.clicked.connect(
+                lambda _checked=False, name=stage_name: self._notify_workflow_completion(
+                    name
+                )
+            )
+
+    def _notify_workflow_completion(self, stage_name: str) -> None:
+        title = f"{stage_name} complete"
+        message = f"{stage_name} finished. You're ready for the next step."
+        self.notification_manager.notify(title, message, parent=self)
 
     def _select_files(self) -> None:
         files, _ = QtWidgets.QFileDialog.getOpenFileNames(
@@ -1538,6 +1577,39 @@ def create_app() -> QtWidgets.QApplication:
     if app is None:
         app = QtWidgets.QApplication([])
     return app
+
+
+class DesktopNotificationManager:
+    def __init__(self) -> None:
+        self._enabled = False
+        self._tray_icon: QtWidgets.QSystemTrayIcon | None = None
+
+    def set_enabled(self, enabled: bool) -> None:
+        self._enabled = enabled
+        if not enabled and self._tray_icon is not None:
+            self._tray_icon.hide()
+
+    def notify(
+        self, title: str, message: str, parent: QtWidgets.QWidget | None = None
+    ) -> bool:
+        if not self._enabled:
+            return False
+        if not QtWidgets.QSystemTrayIcon.isSystemTrayAvailable():
+            return False
+        if self._tray_icon is None:
+            icon = parent.windowIcon() if parent is not None else QtGui.QIcon()
+            if icon.isNull() and parent is not None:
+                icon = parent.style().standardIcon(
+                    QtWidgets.QStyle.StandardPixmap.SP_ComputerIcon
+                )
+            self._tray_icon = QtWidgets.QSystemTrayIcon(icon, parent)
+            self._tray_icon.setVisible(True)
+        self._tray_icon.showMessage(
+            title,
+            message,
+            QtWidgets.QSystemTrayIcon.MessageIcon.Information,
+        )
+        return True
 
 
 def main() -> int:

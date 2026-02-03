@@ -171,6 +171,11 @@ class TestPrimaryLayout(unittest.TestCase):
         self.assertTrue(panel.toggle_button.isChecked())
         self.assertFalse(panel.content_area.isHidden())
         self.assertEqual(panel.toggle_button.arrowType(), QtCore.Qt.ArrowType.DownArrow)
+        self.assertEqual(
+            panel.completion_notification_check.objectName(),
+            "advancedCompletionNotifyCheck",
+        )
+        self.assertFalse(panel.completion_notification_check.isChecked())
 
     def test_comparison_controls(self) -> None:
         from app.ui import MainWindow, PreviewViewer
