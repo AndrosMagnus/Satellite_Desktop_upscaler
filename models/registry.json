@@ -1,0 +1,14 @@
+[
+  {
+    "name": "example-sr-model",
+    "source_url": "https://example.com/models/example-sr-model",
+    "license": "UNKNOWN",
+    "gpu_required": false,
+    "cpu_supported": true,
+    "bands_supported": ["RGB"],
+    "scales": [2],
+    "weights_url": "https://example.com/models/example-sr-model/weights",
+    "checksum": "sha256:TODO",
+    "default_options": {}
+  }
+]
