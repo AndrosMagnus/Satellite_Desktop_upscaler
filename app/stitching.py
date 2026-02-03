@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
+import subprocess
+import tempfile
 from typing import Sequence
 
 
@@ -92,6 +95,23 @@ def stitch_tiles(tiles: Sequence[RasterTile]) -> RasterTile:
     )
 
 
+def stitch_rasters(paths: Sequence[str], output_path: str, *, cli_fallback: bool = True) -> str:
+    """Stitch raster files on disk using Rasterio, with optional GDAL CLI fallback."""
+
+    if not paths:
+        raise ValueError("No input rasters provided for stitching.")
+
+    output = Path(output_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        return _stitch_with_rasterio(paths, str(output))
+    except Exception as exc:
+        if not cli_fallback:
+            raise
+        return _stitch_with_gdal(paths, str(output), exc)
+
+
 def _validate_tile(tile: RasterTile) -> None:
     if tile.band_count == 0:
         raise ValueError("Tile must contain at least one band.")
@@ -142,3 +162,55 @@ def _blit_tile(
                 if existing != fill_value and existing != value:
                     raise ValueError("Overlapping tiles contain conflicting values.")
                 target_row[target_col] = value
+
+
+def _stitch_with_rasterio(paths: Sequence[str], output_path: str) -> str:
+    try:
+        import rasterio
+        from rasterio.merge import merge
+    except Exception as exc:  # pragma: no cover - import guard
+        raise RuntimeError("Rasterio is required for stitching.") from exc
+
+    from contextlib import ExitStack
+
+    with ExitStack() as stack:
+        datasets = [stack.enter_context(rasterio.open(path)) for path in paths]
+        mosaic, out_transform = merge(datasets)
+        out_meta = datasets[0].meta.copy()
+        out_meta.update(
+            {
+                "height": mosaic.shape[1],
+                "width": mosaic.shape[2],
+                "transform": out_transform,
+            }
+        )
+        if datasets[0].nodata is not None:
+            out_meta["nodata"] = datasets[0].nodata
+
+        with rasterio.open(output_path, "w", **out_meta) as dest:
+            dest.write(mosaic)
+            descriptions = datasets[0].descriptions
+            if descriptions and any(descriptions):
+                dest.descriptions = descriptions
+
+    return output_path
+
+
+def _stitch_with_gdal(paths: Sequence[str], output_path: str, rasterio_error: Exception) -> str:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        vrt_path = str(Path(temp_dir) / "mosaic.vrt")
+        _run_gdal_command(["gdalbuildvrt", vrt_path, *paths], rasterio_error)
+        _run_gdal_command(["gdal_translate", vrt_path, output_path], rasterio_error)
+    return output_path
+
+
+def _run_gdal_command(command: list[str], rasterio_error: Exception) -> None:
+    try:
+        subprocess.run(command, check=True, capture_output=True, text=True)
+    except (FileNotFoundError, subprocess.CalledProcessError) as exc:
+        message = (
+            "Rasterio stitching failed and GDAL CLI fallback failed. "
+            f"Rasterio error: {rasterio_error!r}. "
+            f"GDAL error: {exc!r}."
+        )
+        raise RuntimeError(message) from exc
