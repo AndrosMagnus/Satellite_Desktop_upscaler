@@ -34,6 +34,10 @@ class RasterTile:
         return len(self.bands)
 
 
+class ReprojectionNotSupportedError(ValueError):
+    """Raised when stitching would require reprojection."""
+
+
 def stitch_tiles(tiles: Sequence[RasterTile]) -> RasterTile:
     """Stitch tiles into a single raster while preserving metadata and band alignment.
 
@@ -107,7 +111,7 @@ def stitch_rasters(paths: Sequence[str], output_path: str, *, cli_fallback: bool
     try:
         return _stitch_with_rasterio(paths, str(output))
     except Exception as exc:
-        if not cli_fallback:
+        if isinstance(exc, ReprojectionNotSupportedError) or not cli_fallback:
             raise
         return _stitch_with_gdal(paths, str(output), exc)
 
@@ -175,6 +179,11 @@ def _stitch_with_rasterio(paths: Sequence[str], output_path: str) -> str:
 
     with ExitStack() as stack:
         datasets = [stack.enter_context(rasterio.open(path)) for path in paths]
+        reference_crs = datasets[0].crs
+        if any(dataset.crs != reference_crs for dataset in datasets[1:]):
+            raise ReprojectionNotSupportedError(
+                "Reprojection is not supported in v1; all input rasters must share the same CRS."
+            )
         mosaic, out_transform = merge(datasets)
         out_meta = datasets[0].meta.copy()
         out_meta.update(

@@ -1,5 +1,7 @@
 import subprocess
+import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -36,9 +38,51 @@ class TestRasterFileStitching(unittest.TestCase):
         rasterio_mock.assert_called_once()
         gdal_mock.assert_called_once()
 
+    def test_stitch_rasters_rejects_reprojection(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "out.tif"
+            with mock.patch(
+                "app.stitching._stitch_with_rasterio",
+                side_effect=stitching.ReprojectionNotSupportedError("no reprojection"),
+            ) as rasterio_mock:
+                with mock.patch("app.stitching._stitch_with_gdal") as gdal_mock:
+                    with self.assertRaises(stitching.ReprojectionNotSupportedError):
+                        stitching.stitch_rasters(["a.tif"], str(output))
+
+        rasterio_mock.assert_called_once()
+        gdal_mock.assert_not_called()
+
     def test_stitch_rasters_rejects_empty_inputs(self) -> None:
         with self.assertRaises(ValueError):
             stitching.stitch_rasters([], "out.tif")
+
+    def test_rasterio_rejects_mismatched_crs(self) -> None:
+        fake_rasterio = types.ModuleType("rasterio")
+        fake_merge = types.ModuleType("rasterio.merge")
+
+        class FakeDataset:
+            def __init__(self, crs):
+                self.crs = crs
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        def fake_open(path):
+            crs = "EPSG:4326" if "a" in path else "EPSG:3857"
+            return FakeDataset(crs)
+
+        def fake_merge_call(_datasets):
+            raise AssertionError("merge should not be called when CRS mismatches")
+
+        fake_rasterio.open = fake_open
+        fake_merge.merge = fake_merge_call
+
+        with mock.patch.dict(sys.modules, {"rasterio": fake_rasterio, "rasterio.merge": fake_merge}):
+            with self.assertRaises(stitching.ReprojectionNotSupportedError):
+                stitching._stitch_with_rasterio(["a.tif", "b.tif"], "out.tif")
 
     def test_gdal_cli_invocation(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
