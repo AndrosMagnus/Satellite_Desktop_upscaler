@@ -104,7 +104,48 @@ class TestPrimaryLayout(unittest.TestCase):
         self.assertIsNotNone(bundled_row, "Real-ESRGAN must be listed in the model table")
         status_item = panel.model_table.item(bundled_row, 2)
         self.assertIsNotNone(status_item)
-        self.assertEqual(status_item.text(), "Bundled")
+        self.assertEqual(status_item.text(), "Installed")
+
+    def test_model_manager_status_transitions(self) -> None:
+        from app.ui import MainWindow
+
+        window = MainWindow()
+        panel = window.model_manager_panel
+
+        available_row = None
+        for row in range(panel.model_table.rowCount()):
+            item = panel.model_table.item(row, 0)
+            if item and item.text() == "SwinIR":
+                available_row = row
+                break
+        self.assertIsNotNone(available_row, "SwinIR must be listed in the model table")
+
+        panel.model_table.selectRow(available_row)
+        QtWidgets.QApplication.processEvents()
+
+        panel.install_button.click()
+        QtWidgets.QApplication.processEvents()
+
+        status_item = panel.model_table.item(available_row, 2)
+        self.assertIsNotNone(status_item)
+        self.assertEqual(status_item.text(), "Updating")
+
+        model = panel.models[available_row]
+        panel._complete_status_update(model, True)
+        status_item = panel.model_table.item(available_row, 2)
+        self.assertIsNotNone(status_item)
+        self.assertEqual(status_item.text(), "Installed")
+
+        panel.uninstall_button.click()
+        QtWidgets.QApplication.processEvents()
+        status_item = panel.model_table.item(available_row, 2)
+        self.assertIsNotNone(status_item)
+        self.assertEqual(status_item.text(), "Updating")
+
+        panel._complete_status_update(model, False)
+        status_item = panel.model_table.item(available_row, 2)
+        self.assertIsNotNone(status_item)
+        self.assertEqual(status_item.text(), "Available")
 
     def test_model_comparison_panel(self) -> None:
         from app.ui import MainWindow, ModelComparisonPanel

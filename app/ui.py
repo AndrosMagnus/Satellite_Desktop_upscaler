@@ -521,6 +521,8 @@ class ErrorDialog(QtWidgets.QDialog):
 
 
 class ModelManagerPanel(QtWidgets.QGroupBox):
+    _STATUS_UPDATE_DELAY_MS = 600
+
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__("Model Manager", parent)
         self.setObjectName("modelManagerPanel")
@@ -594,6 +596,7 @@ class ModelManagerPanel(QtWidgets.QGroupBox):
                     "name": name,
                     "bundled": bundled,
                     "installed": bundled,
+                    "updating": False,
                     "version": versions[0],
                     "versions": versions,
                 }
@@ -611,9 +614,9 @@ class ModelManagerPanel(QtWidgets.QGroupBox):
             self.model_table.setItem(row, 2, status_item)
 
     def _status_text(self, model: dict[str, object]) -> str:
-        if model.get("bundled"):
-            return "Bundled"
-        return "Installed" if model.get("installed") else "Not installed"
+        if model.get("updating"):
+            return "Updating"
+        return "Installed" if model.get("installed") else "Available"
 
     def _selected_row(self) -> int | None:
         selected_rows = self.model_table.selectionModel().selectedRows()
@@ -657,17 +660,19 @@ class ModelManagerPanel(QtWidgets.QGroupBox):
 
     def _install_selected_model(self) -> None:
         model = self._selected_model()
-        if model is None or model.get("bundled"):
+        if model is None or model.get("bundled") or model.get("updating"):
             return
-        model["installed"] = True
-        self._refresh_selected_row()
+        if model.get("installed"):
+            return
+        self._begin_status_update(model, target_installed=True)
 
     def _uninstall_selected_model(self) -> None:
         model = self._selected_model()
-        if model is None or model.get("bundled"):
+        if model is None or model.get("bundled") or model.get("updating"):
             return
-        model["installed"] = False
-        self._refresh_selected_row()
+        if not model.get("installed"):
+            return
+        self._begin_status_update(model, target_installed=False)
 
     def _refresh_selected_row(self) -> None:
         row = self._selected_row()
@@ -680,9 +685,43 @@ class ModelManagerPanel(QtWidgets.QGroupBox):
         self.status_label.setText(f"Status: {self._status_text(model)}")
         self._update_action_state()
 
+    def _refresh_row_for_model(self, model: dict[str, object]) -> None:
+        try:
+            row = self.models.index(model)
+        except ValueError:
+            return
+        status_item = self.model_table.item(row, 2)
+        if status_item is not None:
+            status_item.setText(self._status_text(model))
+        if row == self._selected_row():
+            self.status_label.setText(f"Status: {self._status_text(model)}")
+            self._update_action_state()
+
+    def _begin_status_update(
+        self, model: dict[str, object], target_installed: bool
+    ) -> None:
+        model["updating"] = True
+        self._refresh_row_for_model(model)
+        QtCore.QTimer.singleShot(
+            self._STATUS_UPDATE_DELAY_MS,
+            lambda: self._complete_status_update(model, target_installed),
+        )
+
+    def _complete_status_update(
+        self, model: dict[str, object], target_installed: bool
+    ) -> None:
+        model["installed"] = target_installed
+        model["updating"] = False
+        self._refresh_row_for_model(model)
+
     def _update_action_state(self) -> None:
         model = self._selected_model()
         if model is None:
+            self.install_button.setEnabled(False)
+            self.uninstall_button.setEnabled(False)
+            self.version_combo.setEnabled(False)
+            return
+        if model.get("updating"):
             self.install_button.setEnabled(False)
             self.uninstall_button.setEnabled(False)
             self.version_combo.setEnabled(False)
