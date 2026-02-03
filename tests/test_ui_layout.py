@@ -188,6 +188,15 @@ class TestPrimaryLayout(unittest.TestCase):
             "advancedCompletionNotifyCheck",
         )
         self.assertFalse(panel.completion_notification_check.isChecked())
+        self.assertEqual(panel.compute_combo.objectName(), "advancedComputeCombo")
+        compute_items = [
+            panel.compute_combo.itemText(index)
+            for index in range(panel.compute_combo.count())
+        ]
+        self.assertEqual(
+            compute_items,
+            ["Auto", "GPU", "CPU"],
+        )
 
     def test_comparison_controls(self) -> None:
         from app.ui import MainWindow, PreviewViewer

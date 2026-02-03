@@ -139,6 +139,35 @@ class TestRecommendationEngine(unittest.TestCase):
             )
         )
 
+    def test_compute_override_cpu_disables_gpu(self) -> None:
+        scene = SceneMetadata(provider="PlanetScope", band_count=3, resolution_m=3.0)
+        hardware = HardwareProfile(gpu_available=True, vram_gb=10, ram_gb=32)
+        overrides = ModelOverrides(compute_mode="CPU")
+
+        recommendation = recommend_model_with_overrides(scene, hardware, overrides)
+
+        self.assertTrue(recommendation.tiling)
+        self.assertTrue(
+            any(
+                "Compute override set to CPU" in warning
+                for warning in recommendation.warnings
+            )
+        )
+
+    def test_compute_override_gpu_when_detection_missing(self) -> None:
+        scene = SceneMetadata(provider="Landsat", band_count=7, resolution_m=30.0)
+        hardware = HardwareProfile(gpu_available=False, vram_gb=0, ram_gb=16)
+        overrides = ModelOverrides(compute_mode="GPU")
+
+        recommendation = recommend_model_with_overrides(scene, hardware, overrides)
+
+        self.assertTrue(
+            any(
+                "Compute override set to GPU" in warning
+                for warning in recommendation.warnings
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

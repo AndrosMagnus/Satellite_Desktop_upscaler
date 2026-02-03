@@ -40,6 +40,7 @@ class ModelOverrides:
     scale: int | None = None
     tiling: bool | None = None
     precision: str | None = None
+    compute_mode: str | None = None
 
 
 _MODEL_CAPABILITIES = {
@@ -135,7 +136,19 @@ def recommend_model_with_overrides(
 ) -> ModelRecommendation:
     """Return a recommendation updated with user overrides and warnings."""
 
+    compute_warnings: list[str] = []
+    if overrides and overrides.compute_mode:
+        hardware = _apply_compute_override(hardware, overrides.compute_mode, compute_warnings)
     recommendation = recommend_model(scene, hardware)
+    if compute_warnings:
+        recommendation = ModelRecommendation(
+            model=recommendation.model,
+            scale=recommendation.scale,
+            tiling=recommendation.tiling,
+            precision=recommendation.precision,
+            warnings=tuple((*recommendation.warnings, *compute_warnings)),
+            reason=recommendation.reason,
+        )
     if overrides is None:
         return recommendation
     return apply_overrides(recommendation, overrides)
@@ -197,6 +210,33 @@ def apply_overrides(
         warnings=tuple(warnings),
         reason=recommendation.reason,
     )
+
+
+def _apply_compute_override(
+    hardware: HardwareProfile, compute_mode: str, warnings: list[str]
+) -> HardwareProfile:
+    normalized = compute_mode.strip().lower()
+    if not normalized or normalized == "auto":
+        return hardware
+    if normalized == "cpu":
+        if hardware.gpu_available:
+            warnings.append("Compute override set to CPU; GPU acceleration disabled.")
+        targets = get_hardware_targets()
+        return HardwareProfile(
+            gpu_available=False,
+            vram_gb=max(hardware.vram_gb, targets.minimum_vram_gb),
+            ram_gb=hardware.ram_gb,
+        )
+    if normalized == "gpu":
+        if not hardware.gpu_available:
+            warnings.append(
+                "Compute override set to GPU; hardware detection did not find a GPU."
+            )
+        return HardwareProfile(
+            gpu_available=True, vram_gb=hardware.vram_gb, ram_gb=hardware.ram_gb
+        )
+    warnings.append(f"Compute override '{compute_mode}' is invalid; using auto detection.")
+    return hardware
 
 
 def _band_profile(band_count: int) -> str:

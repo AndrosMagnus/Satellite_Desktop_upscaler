@@ -674,6 +674,10 @@ class AdvancedOptionsPanel(CollapsiblePanel):
         precision_combo.setObjectName("advancedPrecisionCombo")
         precision_combo.addItems(["Auto", "FP16", "FP32"])
 
+        compute_combo = QtWidgets.QComboBox()
+        compute_combo.setObjectName("advancedComputeCombo")
+        compute_combo.addItems(["Auto", "GPU", "CPU"])
+
         seam_blend_check = QtWidgets.QCheckBox("Enable seam blending")
         seam_blend_check.setObjectName("advancedSeamBlendCheck")
 
@@ -685,12 +689,14 @@ class AdvancedOptionsPanel(CollapsiblePanel):
         content_layout.addRow("Scale factor", scale_combo)
         content_layout.addRow("Tiling strategy", tiling_combo)
         content_layout.addRow("Precision", precision_combo)
+        content_layout.addRow("Compute", compute_combo)
         content_layout.addRow("", seam_blend_check)
         content_layout.addRow("", completion_notification_check)
 
         self.scale_combo = scale_combo
         self.tiling_combo = tiling_combo
         self.precision_combo = precision_combo
+        self.compute_combo = compute_combo
         self.seam_blend_check = seam_blend_check
         self.completion_notification_check = completion_notification_check
 
