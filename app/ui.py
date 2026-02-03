@@ -876,6 +876,7 @@ class ModelComparisonPanel(QtWidgets.QGroupBox):
         self._apply_mode(mode_combo.currentText())
 
         mode_combo.currentTextChanged.connect(self._apply_mode)
+        self._batch_mode = False
 
     def _load_models(self) -> None:
         model_names = self._load_model_names()
@@ -920,6 +921,12 @@ class ModelComparisonPanel(QtWidgets.QGroupBox):
             return
         self.model_a_combo.setEnabled(comparison)
         self.model_b_combo.setEnabled(comparison)
+
+    def set_batch_mode(self, enabled: bool) -> None:
+        self._batch_mode = enabled
+        if enabled and self.mode_combo.currentText() != "Standard":
+            self.mode_combo.setCurrentText("Standard")
+        self.mode_combo.setEnabled(not enabled)
 
     def is_comparison_mode(self) -> bool:
         return self.mode_combo.currentText() == "Model comparison"
@@ -1023,6 +1030,7 @@ class ExportPresetsPanel(QtWidgets.QGroupBox):
         layout.addWidget(preset_description)
 
         self.preset_list = preset_list
+        self.recommended_label = recommended_label
         self.recommended_combo = recommended_combo
         self.use_recommended_button = use_recommended_button
         self.band_handling_combo = band_handling_combo
@@ -1030,6 +1038,7 @@ class ExportPresetsPanel(QtWidgets.QGroupBox):
         self.metadata_warning_label = metadata_warning
         self.preset_description = preset_description
         self._input_format: str | None = None
+        self._recommended_label_text = recommended_label.text()
 
         self._presets = self._build_presets()
         self._populate_presets()
@@ -1120,6 +1129,14 @@ class ExportPresetsPanel(QtWidgets.QGroupBox):
     def set_recommended_preset(self, name: str) -> None:
         if name and self.recommended_combo.findText(name) >= 0:
             self.recommended_combo.setCurrentText(name)
+
+    def set_batch_mode(self, enabled: bool) -> None:
+        self.recommended_combo.setEnabled(not enabled)
+        self.use_recommended_button.setEnabled(not enabled)
+        if enabled:
+            self.recommended_label.setText("Recommended preset (batch disabled)")
+        else:
+            self.recommended_label.setText(self._recommended_label_text)
 
     def selected_band_handling(self) -> BandHandling:
         return BandHandling.from_label(self.band_handling_combo.currentText())
@@ -1515,6 +1532,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.changelog_panel = changelog_panel
         self.system_info_panel = system_info_panel
         self.run_button: QtWidgets.QPushButton | None = None
+        self._batch_mode = False
 
         add_files_button.clicked.connect(self._select_files)
         add_folder_button.clicked.connect(self._select_folder)
@@ -1773,6 +1791,8 @@ class MainWindow(QtWidgets.QMainWindow):
         super().closeEvent(event)
 
     def _handle_selection_change(self) -> None:
+        selected_paths = self._selected_input_paths()
+        self._set_batch_mode(len(selected_paths) > 1)
         items = self.input_list.selectedItems()
         if len(items) != 1:
             message = "Select a single file to preview."
@@ -1811,6 +1831,13 @@ class MainWindow(QtWidgets.QMainWindow):
             return
 
         self._load_preview_and_metadata(selected_path)
+
+    def _set_batch_mode(self, enabled: bool) -> None:
+        if self._batch_mode == enabled:
+            return
+        self._batch_mode = enabled
+        self.export_presets_panel.set_batch_mode(enabled)
+        self.model_comparison_panel.set_batch_mode(enabled)
 
     def _load_preview_and_metadata(self, path: str) -> None:
         self._update_recommended_preset(path)

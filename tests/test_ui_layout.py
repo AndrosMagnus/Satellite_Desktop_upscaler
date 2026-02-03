@@ -154,6 +154,29 @@ class TestPrimaryLayout(unittest.TestCase):
         self.assertIsNotNone(current_item)
         self.assertEqual(current_item.text(), "Landsat")
 
+    def test_batch_mode_disables_per_image_overrides(self) -> None:
+        from app.ui import MainWindow
+
+        window = MainWindow()
+        window.input_list.add_paths(["/tmp/a.tif", "/tmp/b.tif"])
+        window.input_list.clearSelection()
+        window.input_list.item(0).setSelected(True)
+        window.input_list.item(1).setSelected(True)
+        QtWidgets.QApplication.processEvents()
+
+        self.assertFalse(window.export_presets_panel.recommended_combo.isEnabled())
+        self.assertFalse(window.export_presets_panel.use_recommended_button.isEnabled())
+        self.assertFalse(window.model_comparison_panel.mode_combo.isEnabled())
+        self.assertEqual(window.model_comparison_panel.mode_combo.currentText(), "Standard")
+
+        window.input_list.clearSelection()
+        window.input_list.item(0).setSelected(True)
+        QtWidgets.QApplication.processEvents()
+
+        self.assertTrue(window.export_presets_panel.recommended_combo.isEnabled())
+        self.assertTrue(window.export_presets_panel.use_recommended_button.isEnabled())
+        self.assertTrue(window.model_comparison_panel.mode_combo.isEnabled())
+
     def test_band_handling_selection(self) -> None:
         from app.band_handling import BandHandling
         from app.ui import MainWindow
