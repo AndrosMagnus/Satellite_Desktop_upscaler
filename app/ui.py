@@ -13,6 +13,7 @@ from app.band_handling import BandHandling, ExportSettings
 from app.error_handling import UserFacingError, as_user_facing_error
 from app.mosaic_detection import preview_stitch_bounds, suggest_mosaic
 from app.metadata import extract_image_header_info
+from app.session import SessionState, SessionStore
 
 
 def _format_bytes(size_bytes: int) -> str:
@@ -1322,6 +1323,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self._configure_shortcuts()
         self._current_preview_image: QtGui.QImage | None = None
         self._update_comparison_state()
+        self._session_store = SessionStore()
+        self._restoring_session = False
+        self._session_dirty = False
+        self._restore_session_if_needed()
+        self._mark_session_active()
 
     def _build_ui(self) -> None:
         splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
@@ -1488,7 +1494,9 @@ class MainWindow(QtWidgets.QMainWindow):
         add_files_button.clicked.connect(self._select_files)
         add_folder_button.clicked.connect(self._select_folder)
         input_list.itemSelectionChanged.connect(self._handle_selection_change)
+        input_list.itemSelectionChanged.connect(self._persist_session_state)
         input_list.paths_added.connect(self._select_latest_added)
+        input_list.paths_added.connect(self._persist_session_state)
         model_comparison_panel.mode_combo.currentTextChanged.connect(
             self._update_comparison_state
         )
@@ -1636,6 +1644,65 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.input_list.scrollToItem(self.input_list.item(index))
                 break
 
+    def _restore_session_if_needed(self) -> None:
+        state = self._session_store.load()
+        if not state.dirty or not state.paths:
+            return
+        self._restoring_session = True
+        try:
+            self.input_list.add_paths(state.paths)
+            if state.selected_paths:
+                self._select_session_paths(state.selected_paths)
+        finally:
+            self._restoring_session = False
+
+    def _select_session_paths(self, paths: list[str]) -> None:
+        if not paths:
+            return
+        targets = set(paths)
+        self.input_list.clearSelection()
+        last_selected = None
+        for index in range(self.input_list.count()):
+            item = self.input_list.item(index)
+            if item.text() in targets:
+                item.setSelected(True)
+                last_selected = item
+        if last_selected is not None:
+            self.input_list.scrollToItem(last_selected)
+
+    def _current_input_paths(self) -> list[str]:
+        paths = [self.input_list.item(index).text() for index in range(self.input_list.count())]
+        return [
+            path
+            for path in paths
+            if path and path != self.input_list.placeholder_text
+        ]
+
+    def _current_selected_paths(self) -> list[str]:
+        paths = [item.text() for item in self.input_list.selectedItems()]
+        return [
+            path
+            for path in paths
+            if path and path != self.input_list.placeholder_text
+        ]
+
+    def _persist_session_state(self, *args: object, dirty: bool | None = None) -> None:
+        if self._restoring_session:
+            return
+        if dirty is None:
+            dirty = self._session_dirty
+        state = SessionState(
+            dirty=dirty,
+            paths=self._current_input_paths(),
+            selected_paths=self._current_selected_paths(),
+        )
+        self._session_dirty = state.dirty
+        self._session_store.save(state)
+
+    def _mark_session_active(self) -> None:
+        self._session_dirty = True
+        self._persist_session_state(dirty=True)
+
     def _update_comparison_state(self) -> None:
         before_label, after_label = self.model_comparison_panel.comparison_labels()
         self.comparison_viewer.set_titles(before_label, after_label)
@@ -1665,6 +1732,10 @@ class MainWindow(QtWidgets.QMainWindow):
             self.comparison_viewer.set_after_placeholder(after_placeholder)
         else:
             self.comparison_viewer.set_after_image(self._current_preview_image)
+
+    def closeEvent(self, event: QtGui.QCloseEvent) -> None:  # noqa: N802
+        self._persist_session_state(dirty=False)
+        super().closeEvent(event)
 
     def _handle_selection_change(self) -> None:
         items = self.input_list.selectedItems()
