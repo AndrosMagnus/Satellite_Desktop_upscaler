@@ -1,6 +1,69 @@
 from __future__ import annotations
 
-from PySide6 import QtCore, QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets
+
+
+class InputListWidget(QtWidgets.QListWidget):
+    placeholder_text = "Drop files or folders here to begin."
+
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setAcceptDrops(True)
+        self.setDragDropMode(QtWidgets.QAbstractItemView.DragDropMode.DropOnly)
+        self.setDefaultDropAction(QtCore.Qt.DropAction.CopyAction)
+        self.ensure_placeholder()
+
+    def ensure_placeholder(self) -> None:
+        if self.count() == 0:
+            self.addItem(self.placeholder_text)
+
+    def add_paths(self, paths: list[str]) -> None:
+        cleaned = [path for path in paths if path]
+        if not cleaned:
+            return
+
+        existing = {self.item(index).text() for index in range(self.count())}
+        placeholder_only = existing == {self.placeholder_text}
+        if placeholder_only:
+            self.clear()
+            existing = set()
+
+        added_any = False
+        for path in cleaned:
+            if path in existing:
+                continue
+            self.addItem(path)
+            existing.add(path)
+            added_any = True
+
+        if not added_any and self.count() == 0:
+            self.ensure_placeholder()
+
+    def _accept_drag(self, event: QtGui.QDragEnterEvent | QtGui.QDragMoveEvent) -> None:
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragEnterEvent(self, event: QtGui.QDragEnterEvent) -> None:
+        self._accept_drag(event)
+
+    def dragMoveEvent(self, event: QtGui.QDragMoveEvent) -> None:
+        self._accept_drag(event)
+
+    def dropEvent(self, event: QtGui.QDropEvent) -> None:
+        mime = event.mimeData()
+        if not mime.hasUrls():
+            event.ignore()
+            return
+
+        paths: list[str] = []
+        for url in mime.urls():
+            local_path = url.toLocalFile()
+            if local_path:
+                paths.append(local_path)
+        self.add_paths(paths)
+        event.acceptProposedAction()
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -13,10 +76,32 @@ class MainWindow(QtWidgets.QMainWindow):
         splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
         splitter.setObjectName("primarySplitter")
 
-        input_list = QtWidgets.QListWidget()
+        left_panel = QtWidgets.QWidget()
+        left_panel.setObjectName("inputPanel")
+        left_layout = QtWidgets.QVBoxLayout(left_panel)
+        left_layout.setContentsMargins(12, 12, 12, 12)
+        left_layout.setSpacing(8)
+
+        import_row = QtWidgets.QWidget()
+        import_row.setObjectName("importRow")
+        import_layout = QtWidgets.QHBoxLayout(import_row)
+        import_layout.setContentsMargins(0, 0, 0, 0)
+        import_layout.setSpacing(8)
+
+        add_files_button = QtWidgets.QPushButton("Add Files")
+        add_files_button.setObjectName("addFilesButton")
+        add_folder_button = QtWidgets.QPushButton("Add Folder")
+        add_folder_button.setObjectName("addFolderButton")
+        import_layout.addWidget(add_files_button)
+        import_layout.addWidget(add_folder_button)
+        import_layout.addStretch(1)
+
+        input_list = InputListWidget()
         input_list.setObjectName("inputList")
         input_list.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection)
-        input_list.addItem("Drop files or folders here to begin.")
+
+        left_layout.addWidget(import_row)
+        left_layout.addWidget(input_list, 1)
 
         right_panel = QtWidgets.QWidget()
         right_panel.setObjectName("previewPanel")
@@ -81,7 +166,7 @@ class MainWindow(QtWidgets.QMainWindow):
         right_layout.addWidget(workflow_group)
         right_layout.addStretch(1)
 
-        splitter.addWidget(input_list)
+        splitter.addWidget(left_panel)
         splitter.addWidget(right_panel)
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 2)
@@ -93,12 +178,38 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.setCentralWidget(container)
         self.splitter = splitter
+        self.left_panel = left_panel
         self.input_list = input_list
+        self.add_files_button = add_files_button
+        self.add_folder_button = add_folder_button
         self.preview_label = preview_label
         self.metadata_summary = metadata_summary
         self.workflow_group = workflow_group
         self.workflow_stage_labels = workflow_stage_labels
         self.workflow_stage_actions = workflow_stage_actions
+
+        add_files_button.clicked.connect(self._select_files)
+        add_folder_button.clicked.connect(self._select_folder)
+
+    def _select_files(self) -> None:
+        files, _ = QtWidgets.QFileDialog.getOpenFileNames(
+            self,
+            "Select input files",
+            "",
+            "All Files (*)",
+        )
+        if files:
+            self.input_list.add_paths(files)
+
+    def _select_folder(self) -> None:
+        folder = QtWidgets.QFileDialog.getExistingDirectory(
+            self,
+            "Select input folder",
+            "",
+            QtWidgets.QFileDialog.Option.ShowDirsOnly,
+        )
+        if folder:
+            self.input_list.add_paths([folder])
 
 
 def create_app() -> QtWidgets.QApplication:

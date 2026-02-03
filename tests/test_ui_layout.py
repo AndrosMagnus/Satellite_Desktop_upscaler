@@ -20,14 +20,15 @@ class TestPrimaryLayout(unittest.TestCase):
             cls.app = QtWidgets.QApplication([])
 
     def test_two_pane_layout(self) -> None:
-        from app.ui import MainWindow
+        from app.ui import InputListWidget, MainWindow
 
         window = MainWindow()
         splitter = window.splitter
         self.assertIsInstance(splitter, QtWidgets.QSplitter)
         self.assertEqual(splitter.orientation(), QtCore.Qt.Orientation.Horizontal)
-        self.assertIs(window.input_list, splitter.widget(0))
+        self.assertIs(window.left_panel, splitter.widget(0))
         self.assertEqual(window.input_list.objectName(), "inputList")
+        self.assertIsInstance(window.input_list, InputListWidget)
 
     def test_preview_and_metadata_on_right(self) -> None:
         from app.ui import MainWindow
