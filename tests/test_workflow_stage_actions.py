@@ -1,5 +1,6 @@
 import os
 import unittest
+from unittest import mock
 
 
 try:
@@ -83,8 +84,39 @@ class TestWorkflowStageActions(unittest.TestCase):
         window.input_list.item(0).setSelected(True)
         QtWidgets.QApplication.processEvents()
 
-        window.workflow_stage_actions[3].click()
+        with mock.patch(
+            "app.ui.QtWidgets.QInputDialog.getItem",
+            return_value=("Landsat", True),
+        ) as prompt:
+            window.workflow_stage_actions[3].click()
+            QtWidgets.QApplication.processEvents()
+
+        self.assertEqual(
+            window.export_presets_panel.recommended_combo.currentText(),
+            "Landsat",
+        )
+        self.assertTrue(prompt.called)
+        self.assertEqual(
+            window.status_bar.currentMessage(),
+            "Recommend: selected provider 'Landsat' for the preset.",
+        )
+
+    def test_recommend_stage_handles_ambiguous_cancel(self) -> None:
+        from app.ui import MainWindow
+
+        window = MainWindow()
+        window.export_presets_panel.recommended_combo.setCurrentText("PlanetScope")
+        window.input_list.add_paths(["/tmp/sentinel_landsat_s2a_lc08_scene.tif"])
+        window.input_list.clearSelection()
+        window.input_list.item(0).setSelected(True)
         QtWidgets.QApplication.processEvents()
+
+        with mock.patch(
+            "app.ui.QtWidgets.QInputDialog.getItem",
+            return_value=("", False),
+        ):
+            window.workflow_stage_actions[3].click()
+            QtWidgets.QApplication.processEvents()
 
         self.assertEqual(
             window.export_presets_panel.recommended_combo.currentText(),

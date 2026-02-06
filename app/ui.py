@@ -1798,6 +1798,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
         recommendation = recommend_provider(selected_paths[0])
         if recommendation.ambiguous:
+            selection = self._prompt_for_provider_selection(recommendation.candidates)
+            if selection:
+                self.export_presets_panel.set_recommended_preset(selection)
+                self._set_workflow_message(
+                    f"Recommend: selected provider '{selection}' for the preset."
+                )
+                return
             candidates = ", ".join(match.name for match in recommendation.candidates)
             message = (
                 "Recommend: multiple providers match "
