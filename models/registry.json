@@ -140,14 +140,20 @@
       2,
       4
     ],
-    "weights_url": "TBD",
-    "checksum": "sha256:TODO",
+    "weights_url": "models/weights/srgan_eo_dummy.bin",
+    "checksum": "sha256:906b0a0e87f51bb76954055e47a9af908854866fcb6c20d476ee41427a6323b1",
     "default_options": {
       "scale": 4,
       "tiling": "auto",
       "precision": "auto"
     },
-    "dependencies": []
+    "dependencies": [
+      "torch==2.1.2",
+      "torchvision==0.16.2",
+      "numpy==1.26.4",
+      "opencv-python==4.8.1.78",
+      "Pillow==10.2.0"
+    ]
   },
   {
     "name": "S2DR3",

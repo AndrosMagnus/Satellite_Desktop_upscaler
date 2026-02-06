@@ -23,6 +23,12 @@ class TestModelEntrypoints(unittest.TestCase):
         path = Path(entrypoint)
         self.assertTrue(path.is_file(), "SatelliteSR entrypoint must exist on disk")
 
+    def test_srgan_eo_entrypoint_resolves(self) -> None:
+        entrypoint = resolve_model_entrypoint("SRGAN adapted to EO")
+        self.assertIsNotNone(entrypoint, "SRGAN adapted to EO entrypoint must be registered")
+        path = Path(entrypoint)
+        self.assertTrue(path.is_file(), "SRGAN adapted to EO entrypoint must exist on disk")
+
     def test_build_model_wrapper_uses_entrypoint(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             base_dir = Path(tmpdir)
@@ -34,6 +40,20 @@ class TestModelEntrypoints(unittest.TestCase):
 
             wrapper = build_model_wrapper("SatelliteSR", "v1", base_dir=base_dir)
             self.assertEqual(wrapper.name, "SatelliteSR")
+            self.assertEqual(wrapper.version, "v1")
+            self.assertTrue(Path(wrapper.entrypoint).is_file())
+
+    def test_build_srgan_wrapper_uses_entrypoint(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base_dir = Path(tmpdir)
+            paths = resolve_install_paths("SRGAN adapted to EO", "v1", base_dir=base_dir)
+            paths.root.mkdir(parents=True, exist_ok=True)
+            paths.manifest.write_text("{}", encoding="utf-8")
+            paths.weights.write_bytes(b"weights")
+            self._create_venv(paths.venv)
+
+            wrapper = build_model_wrapper("SRGAN adapted to EO", "v1", base_dir=base_dir)
+            self.assertEqual(wrapper.name, "SRGAN adapted to EO")
             self.assertEqual(wrapper.version, "v1")
             self.assertTrue(Path(wrapper.entrypoint).is_file())
 
