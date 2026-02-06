@@ -1,0 +1,12 @@
+[
+  {
+    "name": "s2_farmland",
+    "reference": "ref_1.json",
+    "prediction": "pred_1.json"
+  },
+  {
+    "name": "s2_river_delta",
+    "reference": "ref_2.json",
+    "prediction": "pred_2.json"
+  }
+]
