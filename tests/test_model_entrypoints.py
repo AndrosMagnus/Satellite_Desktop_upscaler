@@ -29,6 +29,13 @@ class TestModelEntrypoints(unittest.TestCase):
         path = Path(entrypoint)
         self.assertTrue(path.is_file(), "SRGAN adapted to EO entrypoint must exist on disk")
 
+    def test_s2_entrypoints_resolve(self) -> None:
+        for model_name in ("S2DR3", "SEN2SR"):
+            entrypoint = resolve_model_entrypoint(model_name)
+            self.assertIsNotNone(entrypoint, f"{model_name} entrypoint must be registered")
+            path = Path(entrypoint)
+            self.assertTrue(path.is_file(), f"{model_name} entrypoint must exist on disk")
+
     def test_build_model_wrapper_uses_entrypoint(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             base_dir = Path(tmpdir)
@@ -54,6 +61,20 @@ class TestModelEntrypoints(unittest.TestCase):
 
             wrapper = build_model_wrapper("SRGAN adapted to EO", "v1", base_dir=base_dir)
             self.assertEqual(wrapper.name, "SRGAN adapted to EO")
+            self.assertEqual(wrapper.version, "v1")
+            self.assertTrue(Path(wrapper.entrypoint).is_file())
+
+    def test_build_s2_wrapper_uses_entrypoint(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base_dir = Path(tmpdir)
+            paths = resolve_install_paths("S2DR3", "v1", base_dir=base_dir)
+            paths.root.mkdir(parents=True, exist_ok=True)
+            paths.manifest.write_text("{}", encoding="utf-8")
+            paths.weights.write_bytes(b"weights")
+            self._create_venv(paths.venv)
+
+            wrapper = build_model_wrapper("S2DR3", "v1", base_dir=base_dir)
+            self.assertEqual(wrapper.name, "S2DR3")
             self.assertEqual(wrapper.version, "v1")
             self.assertTrue(Path(wrapper.entrypoint).is_file())
 
