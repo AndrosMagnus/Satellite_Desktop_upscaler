@@ -60,6 +60,12 @@ class TestModelEntrypoints(unittest.TestCase):
         path = Path(entrypoint)
         self.assertTrue(path.is_file(), "MRDAM entrypoint must exist on disk")
 
+    def test_senglean_entrypoint_resolves(self) -> None:
+        entrypoint = resolve_model_entrypoint("SenGLEAN")
+        self.assertIsNotNone(entrypoint, "SenGLEAN entrypoint must be registered")
+        path = Path(entrypoint)
+        self.assertTrue(path.is_file(), "SenGLEAN entrypoint must exist on disk")
+
     def test_build_model_wrapper_uses_entrypoint(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             base_dir = Path(tmpdir)
@@ -156,6 +162,20 @@ class TestModelEntrypoints(unittest.TestCase):
 
             wrapper = build_model_wrapper("MRDAM", "v1", base_dir=base_dir)
             self.assertEqual(wrapper.name, "MRDAM")
+            self.assertEqual(wrapper.version, "v1")
+            self.assertTrue(Path(wrapper.entrypoint).is_file())
+
+    def test_build_senglean_wrapper_uses_entrypoint(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base_dir = Path(tmpdir)
+            paths = resolve_install_paths("SenGLEAN", "v1", base_dir=base_dir)
+            paths.root.mkdir(parents=True, exist_ok=True)
+            paths.manifest.write_text("{}", encoding="utf-8")
+            paths.weights.write_bytes(b"weights")
+            self._create_venv(paths.venv)
+
+            wrapper = build_model_wrapper("SenGLEAN", "v1", base_dir=base_dir)
+            self.assertEqual(wrapper.name, "SenGLEAN")
             self.assertEqual(wrapper.version, "v1")
             self.assertTrue(Path(wrapper.entrypoint).is_file())
 

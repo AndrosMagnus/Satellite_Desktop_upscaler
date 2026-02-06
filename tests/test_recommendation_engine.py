@@ -51,7 +51,7 @@ class TestRecommendationEngine(unittest.TestCase):
 
         recommendation = recommend_model(scene, hardware)
 
-        self.assertEqual(recommendation.model, "SRGAN adapted to EO")
+        self.assertEqual(recommendation.model, "LDSR-S2")
         self.assertTrue(recommendation.tiling)
         self.assertTrue(
             any("GPU not detected" in warning for warning in recommendation.warnings)

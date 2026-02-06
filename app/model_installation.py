@@ -146,7 +146,9 @@ def install_model(
     _ensure_venv(paths.venv)
     _install_dependencies(paths.venv, dependencies or ())
 
-    tmp_path = Path(tempfile.mkstemp(prefix="weights_", suffix=".tmp", dir=paths.root)[1])
+    tmp_fd, tmp_name = tempfile.mkstemp(prefix="weights_", suffix=".tmp", dir=paths.root)
+    os.close(tmp_fd)
+    tmp_path = Path(tmp_name)
     try:
         size_bytes, digest = _download_weights(weights_url, tmp_path)
         expected = _parse_sha256(checksum)
@@ -212,7 +214,7 @@ def _infer_weights_filename(weights_url: str) -> str:
 
 def _download_weights(url: str, dest: Path) -> tuple[int, str | None]:
     parsed = urlparse(url)
-    if parsed.scheme in ("", "file"):
+    if parsed.scheme in ("", "file") or _looks_like_windows_path(url):
         source = _resolve_file_url(parsed, url)
         digest, size_bytes = _copy_with_checksum(source, dest)
         return size_bytes, digest
@@ -238,12 +240,22 @@ def _download_weights(url: str, dest: Path) -> tuple[int, str | None]:
 
 
 def _resolve_file_url(parsed, url: str) -> Path:
+    if _looks_like_windows_path(url):
+        return Path(url)
     if parsed.scheme == "file":
         path = Path(unquote(parsed.path))
         if os.name == "nt" and path.as_posix().startswith("/"):
             path = Path(path.as_posix().lstrip("/"))
         return path
     return Path(url)
+
+
+def _looks_like_windows_path(value: str) -> bool:
+    if len(value) < 3:
+        return False
+    if not value[0].isalpha() or value[1] != ":":
+        return False
+    return value[2] in ("\\", "/")
 
 
 def _copy_with_checksum(source: Path, dest: Path) -> tuple[str | None, int]:

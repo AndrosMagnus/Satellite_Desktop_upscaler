@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 _GEOSPATIAL_FORMATS = {
     "GEOTIFF",
     "TIFF",
@@ -13,15 +15,38 @@ _IGNORED_FORMATS = {
     "NOT AN IMAGE",
 }
 
+_IGNORED_FORMAT_ALIASES = {
+    "NOTANIMAGE",
+}
+
 
 def normalize_format_label(label: str | None) -> str | None:
     if not label:
         return None
     normalized = label.strip().upper()
-    if not normalized or normalized in _IGNORED_FORMATS:
+    if not normalized:
         return None
-    if normalized == "JPG":
+    if normalized in _IGNORED_FORMATS:
+        return None
+    compact = re.sub(r"[\s_-]+", "", normalized)
+    if compact in _IGNORED_FORMAT_ALIASES:
+        return None
+    if compact == "MATCHINPUT":
+        return "MATCH INPUT"
+    if compact == "JPG":
         return "JPEG"
+    if compact == "J2K":
+        return "JPEG2000"
+    if compact == "GEOTIFF":
+        return "GEOTIFF"
+    if compact == "JPEG2000":
+        return "JPEG2000"
+    if compact == "JP2":
+        return "JP2"
+    if compact == "TIF":
+        return "TIF"
+    if compact == "TIFF":
+        return "TIFF"
     return normalized
 
 

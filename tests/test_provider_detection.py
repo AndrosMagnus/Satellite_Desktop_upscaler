@@ -5,7 +5,7 @@ from app.provider_detection import detect_provider, recommend_provider
 
 class TestProviderDetection(unittest.TestCase):
     def test_detects_sentinel(self) -> None:
-        path = "/data/S2A_MSIL2A_20240107T101031.SAFE/GRANULE/L2A_T32TMT.tif"
+        path = "/data/S2A_MSIL2A_20240107T101031_T32TMT_20240107T123456.SAFE"
         self.assertEqual(detect_provider(path), "Sentinel-2")
 
     def test_detects_planetscope(self) -> None:
@@ -26,6 +26,10 @@ class TestProviderDetection(unittest.TestCase):
 
     def test_returns_none_when_unknown(self) -> None:
         path = "/exports/scene_foo_bar_2024.tif"
+        self.assertIsNone(detect_provider(path))
+
+    def test_ignores_directory_hints(self) -> None:
+        path = "/data/sentinel/landsat/scene_foo_bar_2024.tif"
         self.assertIsNone(detect_provider(path))
 
     def test_returns_none_when_ambiguous(self) -> None:

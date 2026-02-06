@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 import re
 
 
@@ -23,7 +24,7 @@ _TOKEN_SPLIT_RE = re.compile(r"[^a-z0-9]+")
 
 
 def detect_provider(path: str) -> str | None:
-    """Return the best matching provider name for a given file path."""
+    """Return the best matching provider name for a given file name or path."""
 
     recommendation = recommend_provider(path)
     return recommendation.best
@@ -32,7 +33,8 @@ def detect_provider(path: str) -> str | None:
 def recommend_provider(path: str) -> ProviderRecommendation:
     """Return provider recommendation details, including ambiguity signals."""
 
-    normalized = path.lower()
+    filename = os.path.basename(path)
+    normalized = filename.lower()
     tokens = [token for token in _TOKEN_SPLIT_RE.split(normalized) if token]
 
     matches = [

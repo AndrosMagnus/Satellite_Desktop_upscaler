@@ -52,24 +52,27 @@ class TestJobRunner(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             log_dir = Path(temp_dir)
             logger = StructuredLogger("runner", log_dir=log_dir)
-            runner = JobRunner(logger=logger, time_provider=clock.monotonic)
+            try:
+                runner = JobRunner(logger=logger, time_provider=clock.monotonic)
 
-            runner.run(Job(job_id="job-2", total_units=2, work=work))
+                runner.run(Job(job_id="job-2", total_units=2, work=work))
 
-            log_file = log_dir / "app.log"
-            self.assertTrue(log_file.exists())
-            lines = log_file.read_text(encoding="utf-8").strip().splitlines()
+                log_file = log_dir / "app.log"
+                self.assertTrue(log_file.exists())
+                lines = log_file.read_text(encoding="utf-8").strip().splitlines()
 
-            self.assertGreaterEqual(len(lines), 3)
-            payloads = [json.loads(line) for line in lines]
+                self.assertGreaterEqual(len(lines), 3)
+                payloads = [json.loads(line) for line in lines]
 
-            for payload in payloads:
-                self.assertIn("ts", payload)
-                self.assertTrue(payload["ts"].endswith("Z"))
-                self.assertIn("level", payload)
-                self.assertIn("component", payload)
-                self.assertIn("event", payload)
-                self.assertIn("message", payload)
+                for payload in payloads:
+                    self.assertIn("ts", payload)
+                    self.assertTrue(payload["ts"].endswith("Z"))
+                    self.assertIn("level", payload)
+                    self.assertIn("component", payload)
+                    self.assertIn("event", payload)
+                    self.assertIn("message", payload)
+            finally:
+                logger.close()
 
     def test_job_runner_cancellation_discards_outputs(self) -> None:
         cancel_token = JobCancellationToken()

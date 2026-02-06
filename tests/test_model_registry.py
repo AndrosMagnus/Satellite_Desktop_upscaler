@@ -29,6 +29,7 @@ class TestModelRegistry(unittest.TestCase):
             "weights_url",
             "checksum",
             "default_options",
+            "dependencies",
         }
 
         for index, model in enumerate(data):
@@ -74,6 +75,11 @@ class TestModelRegistry(unittest.TestCase):
                 model["default_options"], dict,
                 f"Model entry {index} default_options must be object",
             )
+            self.assertIsInstance(
+                model["dependencies"],
+                list,
+                f"Model entry {index} dependencies must be list",
+            )
 
             self.assertTrue(model["name"], f"Model entry {index} name must not be empty")
             self.assertTrue(
@@ -110,6 +116,12 @@ class TestModelRegistry(unittest.TestCase):
                 str,
                 f"Model entry {index} default_options precision must be str",
             )
+            for dep in model["dependencies"]:
+                self.assertIsInstance(
+                    dep,
+                    str,
+                    f"Model entry {index} dependency entries must be str",
+                )
 
 
 if __name__ == "__main__":

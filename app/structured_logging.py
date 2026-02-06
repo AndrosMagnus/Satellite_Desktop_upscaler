@@ -130,6 +130,13 @@ class StructuredLogger:
                 payload[key] = value
         self._logger.log(_coerce_level(level), message, extra={"payload": payload})
 
+    def close(self) -> None:
+        handlers = list(self._logger.handlers)
+        for handler in handlers:
+            handler.flush()
+            handler.close()
+            self._logger.removeHandler(handler)
+
 
 def _coerce_level(level: str) -> int:
     return logging._nameToLevel.get(level.upper(), logging.INFO)
