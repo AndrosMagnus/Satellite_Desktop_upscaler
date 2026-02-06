@@ -10,6 +10,7 @@ _ENTRYPOINTS: dict[str, str] = {
         Path(__file__).resolve().parent / "model_wrappers" / "satellitesr_wrapper.py"
     ),
     "SwinIR": str(Path(__file__).resolve().parent / "model_wrappers" / "swinir_wrapper.py"),
+    "HAT": str(Path(__file__).resolve().parent / "model_wrappers" / "hat_wrapper.py"),
     "SRGAN adapted to EO": str(
         Path(__file__).resolve().parent / "model_wrappers" / "srgan_eo_wrapper.py"
     ),

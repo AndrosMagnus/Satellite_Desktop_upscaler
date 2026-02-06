@@ -81,6 +81,34 @@
     ]
   },
   {
+    "name": "HAT",
+    "source_url": "https://github.com/XPixelGroup/HAT",
+    "license": "UNVERIFIED",
+    "gpu_required": false,
+    "cpu_supported": true,
+    "bands_supported": [
+      "RGB"
+    ],
+    "scales": [
+      2,
+      4
+    ],
+    "weights_url": "models/weights/hat_dummy.bin",
+    "checksum": "sha256:767413def67c5d1d91b0ea3ebfec999d095a59e5ea253e4b907c6f25b664ccc2",
+    "default_options": {
+      "scale": 4,
+      "tiling": "auto",
+      "precision": "auto"
+    },
+    "dependencies": [
+      "torch==2.1.2",
+      "torchvision==0.16.2",
+      "numpy==1.26.4",
+      "opencv-python==4.8.1.78",
+      "Pillow==10.2.0"
+    ]
+  },
+  {
     "name": "SatelliteSR",
     "source_url": "https://github.com/kmalhan/SatelliteSR",
     "license": "UNVERIFIED",

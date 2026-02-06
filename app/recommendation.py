@@ -48,6 +48,7 @@ _MODEL_CAPABILITIES = {
     "Real-ESRGAN": {"gpu_required": False, "cpu_supported": True},
     "Satlas": {"gpu_required": False, "cpu_supported": True},
     "SwinIR": {"gpu_required": False, "cpu_supported": True},
+    "HAT": {"gpu_required": False, "cpu_supported": True},
     "SRGAN adapted to EO": {"gpu_required": False, "cpu_supported": True},
     "SatelliteSR": {"gpu_required": False, "cpu_supported": True},
     "SEN2SR": {"gpu_required": False, "cpu_supported": True},
@@ -63,6 +64,7 @@ _MODEL_SCALES = {
     "Real-ESRGAN": (2, 4),
     "Satlas": (4,),
     "SwinIR": (2, 4),
+    "HAT": (2, 4),
     "SRGAN adapted to EO": (2, 4),
     "SatelliteSR": (2, 4),
     "SEN2SR": (2,),
@@ -84,7 +86,7 @@ _PROVIDER_MODEL_PRIORITY = {
         "RGB": ("SwinIR", "Real-ESRGAN"),
     },
     "Landsat": {
-        "multispectral": ("SRGAN adapted to EO",),
+        "multispectral": ("LDSR-S2", "SRGAN adapted to EO"),
         "RGB": ("SwinIR", "Real-ESRGAN"),
     },
     "Vantor": {

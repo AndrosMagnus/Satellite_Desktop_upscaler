@@ -35,6 +35,12 @@ class TestModelEntrypoints(unittest.TestCase):
         path = Path(entrypoint)
         self.assertTrue(path.is_file(), "SwinIR entrypoint must exist on disk")
 
+    def test_hat_entrypoint_resolves(self) -> None:
+        entrypoint = resolve_model_entrypoint("HAT")
+        self.assertIsNotNone(entrypoint, "HAT entrypoint must be registered")
+        path = Path(entrypoint)
+        self.assertTrue(path.is_file(), "HAT entrypoint must exist on disk")
+
     def test_s2_entrypoints_resolve(self) -> None:
         for model_name in ("S2DR3", "SEN2SR", "LDSR-S2"):
             entrypoint = resolve_model_entrypoint(model_name)
@@ -87,6 +93,20 @@ class TestModelEntrypoints(unittest.TestCase):
 
             wrapper = build_model_wrapper("SwinIR", "v1", base_dir=base_dir)
             self.assertEqual(wrapper.name, "SwinIR")
+            self.assertEqual(wrapper.version, "v1")
+            self.assertTrue(Path(wrapper.entrypoint).is_file())
+
+    def test_build_hat_wrapper_uses_entrypoint(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base_dir = Path(tmpdir)
+            paths = resolve_install_paths("HAT", "v1", base_dir=base_dir)
+            paths.root.mkdir(parents=True, exist_ok=True)
+            paths.manifest.write_text("{}", encoding="utf-8")
+            paths.weights.write_bytes(b"weights")
+            self._create_venv(paths.venv)
+
+            wrapper = build_model_wrapper("HAT", "v1", base_dir=base_dir)
+            self.assertEqual(wrapper.name, "HAT")
             self.assertEqual(wrapper.version, "v1")
             self.assertTrue(Path(wrapper.entrypoint).is_file())
 
