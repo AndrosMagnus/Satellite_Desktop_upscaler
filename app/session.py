@@ -22,6 +22,7 @@ class SessionState:
     comparison_mode: bool = False
     comparison_model_a: str | None = None
     comparison_model_b: str | None = None
+    model_cache_dir: str | None = None
     advanced_scale: str | None = None
     advanced_tiling: str | None = None
     advanced_precision: str | None = None
@@ -84,6 +85,7 @@ class SessionStore:
             comparison_mode=_safe_bool(data.get("comparison_mode")),
             comparison_model_a=_safe_str(data.get("comparison_model_a")),
             comparison_model_b=_safe_str(data.get("comparison_model_b")),
+            model_cache_dir=_safe_str(data.get("model_cache_dir")),
             advanced_scale=_safe_str(data.get("advanced_scale")),
             advanced_tiling=_safe_str(data.get("advanced_tiling")),
             advanced_precision=_safe_str(data.get("advanced_precision")),
@@ -104,6 +106,7 @@ class SessionStore:
             "comparison_mode": bool(state.comparison_mode),
             "comparison_model_a": state.comparison_model_a,
             "comparison_model_b": state.comparison_model_b,
+            "model_cache_dir": state.model_cache_dir,
             "advanced_scale": state.advanced_scale,
             "advanced_tiling": state.advanced_tiling,
             "advanced_precision": state.advanced_precision,

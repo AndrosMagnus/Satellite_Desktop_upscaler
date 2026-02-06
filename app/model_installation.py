@@ -36,11 +36,19 @@ class InstallResult:
 
 
 class ModelInstaller:
-    def __init__(self, base_dir: Path | None = None) -> None:
+    def __init__(
+        self, base_dir: Path | None = None, cache_dir: Path | None = None
+    ) -> None:
         self._base_dir = base_dir
+        self._cache_dir = cache_dir
 
     def is_installed(self, name: str, version: str) -> bool:
-        paths = resolve_install_paths(name, version, base_dir=self._base_dir)
+        paths = resolve_install_paths(
+            name,
+            version,
+            base_dir=self._base_dir,
+            cache_dir=self._cache_dir,
+        )
         if not paths.manifest.is_file():
             return False
         if not paths.weights.is_file():
@@ -64,13 +72,23 @@ class ModelInstaller:
             checksum=checksum,
             dependencies=dependencies,
             base_dir=self._base_dir,
+            cache_dir=self._cache_dir,
         )
 
     def uninstall(self, name: str, version: str) -> None:
-        uninstall_model(name, version, base_dir=self._base_dir)
+        uninstall_model(
+            name,
+            version,
+            base_dir=self._base_dir,
+            cache_dir=self._cache_dir,
+        )
 
 
-def resolve_model_cache_dir(base_dir: Path | None = None) -> Path:
+def resolve_model_cache_dir(
+    base_dir: Path | None = None, cache_dir: Path | None = None
+) -> Path:
+    if cache_dir is not None:
+        return Path(cache_dir).expanduser()
     data_dir = _resolve_data_dir(base_dir)
     return data_dir / "models"
 
@@ -80,9 +98,10 @@ def resolve_install_paths(
     version: str,
     *,
     base_dir: Path | None = None,
+    cache_dir: Path | None = None,
     filename: str | None = None,
 ) -> InstallPaths:
-    cache_dir = resolve_model_cache_dir(base_dir)
+    cache_dir = resolve_model_cache_dir(base_dir, cache_dir)
     model_dir = cache_dir / _slugify(name) / _slugify(version or "latest")
     weights_name = filename or "weights.bin"
     return InstallPaths(
@@ -101,6 +120,7 @@ def install_model(
     checksum: str | None = None,
     dependencies: Iterable[str] | None = None,
     base_dir: Path | None = None,
+    cache_dir: Path | None = None,
 ) -> InstallResult:
     if not weights_url or weights_url.strip().upper() == "TBD":
         raise UserFacingError(
@@ -119,6 +139,7 @@ def install_model(
         name,
         version,
         base_dir=base_dir,
+        cache_dir=cache_dir,
         filename=weights_name,
     )
     paths.root.mkdir(parents=True, exist_ok=True)
@@ -168,8 +189,14 @@ def install_model(
             tmp_path.unlink(missing_ok=True)
 
 
-def uninstall_model(name: str, version: str, *, base_dir: Path | None = None) -> None:
-    paths = resolve_install_paths(name, version, base_dir=base_dir)
+def uninstall_model(
+    name: str,
+    version: str,
+    *,
+    base_dir: Path | None = None,
+    cache_dir: Path | None = None,
+) -> None:
+    paths = resolve_install_paths(name, version, base_dir=base_dir, cache_dir=cache_dir)
     if paths.root.exists():
         shutil.rmtree(paths.root, ignore_errors=True)
 
@@ -339,8 +366,10 @@ def _install_dependencies(venv_dir: Path, dependencies: Iterable[str]) -> None:
         ) from exc
 
 
-def run_missing_health_checks(base_dir: Path | None = None) -> list[dict[str, object]]:
-    cache_dir = resolve_model_cache_dir(base_dir)
+def run_missing_health_checks(
+    base_dir: Path | None = None, cache_dir: Path | None = None
+) -> list[dict[str, object]]:
+    cache_dir = resolve_model_cache_dir(base_dir, cache_dir)
     if not cache_dir.exists():
         return []
     results: list[dict[str, object]] = []

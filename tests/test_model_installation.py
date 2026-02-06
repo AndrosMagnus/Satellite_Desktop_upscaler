@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from app.error_handling import UserFacingError
-from app.model_installation import install_model
+from app.model_installation import install_model, resolve_install_paths, resolve_model_cache_dir
 
 
 class TestModelInstallation(unittest.TestCase):
@@ -81,6 +81,15 @@ class TestModelInstallation(unittest.TestCase):
                     dependencies=["numpy"],
                     base_dir=base_dir,
                 )
+
+    def test_cache_dir_override_used_for_install_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache_dir = Path(tmpdir) / "model-cache"
+            resolved = resolve_model_cache_dir(cache_dir=cache_dir)
+            self.assertEqual(resolved, cache_dir)
+
+            paths = resolve_install_paths("Test Model", "v2.0", cache_dir=cache_dir)
+            self.assertTrue(str(paths.root).startswith(str(cache_dir)))
 
 
 if __name__ == "__main__":

@@ -6,6 +6,7 @@ import re
 import shutil
 import subprocess
 from collections.abc import Callable
+from pathlib import Path
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
@@ -534,6 +535,7 @@ class ErrorDialog(QtWidgets.QDialog):
 
 
 class ModelManagerPanel(QtWidgets.QGroupBox):
+    model_cache_dir_changed = QtCore.Signal(str)
     _STATUS_UPDATE_DELAY_MS = 600
 
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
@@ -541,6 +543,35 @@ class ModelManagerPanel(QtWidgets.QGroupBox):
         self.setObjectName("modelManagerPanel")
         layout = QtWidgets.QVBoxLayout(self)
         layout.setSpacing(8)
+
+        cache_form = QtWidgets.QWidget()
+        cache_form_layout = QtWidgets.QFormLayout(cache_form)
+        cache_form_layout.setContentsMargins(0, 0, 0, 0)
+        cache_form_layout.setSpacing(6)
+
+        cache_row = QtWidgets.QWidget()
+        cache_row_layout = QtWidgets.QHBoxLayout(cache_row)
+        cache_row_layout.setContentsMargins(0, 0, 0, 0)
+        cache_row_layout.setSpacing(6)
+
+        cache_dir_input = QtWidgets.QLineEdit()
+        cache_dir_input.setObjectName("modelCacheDirInput")
+        cache_dir_input.setClearButtonEnabled(True)
+        browse_button = QtWidgets.QPushButton("Browse")
+        browse_button.setObjectName("modelCacheBrowseButton")
+        reset_button = QtWidgets.QPushButton("Use Default")
+        reset_button.setObjectName("modelCacheResetButton")
+
+        cache_row_layout.addWidget(cache_dir_input, 1)
+        cache_row_layout.addWidget(browse_button)
+        cache_row_layout.addWidget(reset_button)
+        cache_form_layout.addRow("Model cache location", cache_row)
+
+        cache_help = QtWidgets.QLabel(
+            "This folder stores downloaded model weights and dependencies."
+        )
+        cache_help.setWordWrap(True)
+        cache_help.setObjectName("modelCacheHelp")
 
         model_table = QtWidgets.QTableWidget(0, 3)
         model_table.setObjectName("modelTable")
@@ -574,23 +605,29 @@ class ModelManagerPanel(QtWidgets.QGroupBox):
         action_row_layout.addWidget(install_button)
         action_row_layout.addWidget(uninstall_button)
 
+        layout.addWidget(cache_form)
+        layout.addWidget(cache_help)
         layout.addWidget(model_table)
         layout.addWidget(selection_label)
         layout.addWidget(status_label)
         layout.addWidget(action_row)
 
+        self.cache_dir_input = cache_dir_input
+        self.cache_browse_button = browse_button
+        self.cache_reset_button = reset_button
         self.model_table = model_table
         self.selection_label = selection_label
         self.status_label = status_label
         self.version_combo = version_combo
         self.install_button = install_button
         self.uninstall_button = uninstall_button
-        self._installer = ModelInstaller()
         self._install_actions_enabled = (
             os.environ.get("SATELLITE_UPSCALE_ENABLE_INSTALL") == "1"
             and os.environ.get("SATELLITE_UPSCALE_DISABLE_INSTALL") != "1"
         )
         self._model_cache_dir = resolve_model_cache_dir()
+        self._installer = ModelInstaller(cache_dir=self._model_cache_dir)
+        self.cache_dir_input.setText(str(self._model_cache_dir))
         self.models = self._load_model_registry()
         self._populate_table()
         self._update_action_state()
@@ -599,6 +636,61 @@ class ModelManagerPanel(QtWidgets.QGroupBox):
         version_combo.currentTextChanged.connect(self._apply_selected_version)
         install_button.clicked.connect(self._install_selected_model)
         uninstall_button.clicked.connect(self._uninstall_selected_model)
+        cache_dir_input.editingFinished.connect(self._apply_cache_dir_from_text)
+        browse_button.clicked.connect(self._browse_for_cache_dir)
+        reset_button.clicked.connect(self._reset_cache_dir)
+
+    def model_cache_dir(self) -> Path:
+        return self._model_cache_dir
+
+    def set_model_cache_dir(self, value: str | Path | None) -> None:
+        self._apply_cache_dir(value, emit=False)
+
+    def _normalize_cache_dir(self, value: str | Path | None) -> Path:
+        if value:
+            return Path(value).expanduser()
+        return resolve_model_cache_dir()
+
+    def _apply_cache_dir(self, value: str | Path | None, *, emit: bool = True) -> None:
+        resolved = self._normalize_cache_dir(value)
+        if resolved == self._model_cache_dir:
+            self.cache_dir_input.setText(str(resolved))
+            return
+        self._model_cache_dir = resolved
+        self.cache_dir_input.setText(str(resolved))
+        self._installer = ModelInstaller(cache_dir=self._model_cache_dir)
+        self._refresh_installed_models()
+        if emit:
+            self.model_cache_dir_changed.emit(str(self._model_cache_dir))
+
+    def _refresh_installed_models(self) -> None:
+        for model in self.models:
+            if model.get("bundled"):
+                model["installed"] = True
+            elif self._install_actions_enabled:
+                model["installed"] = self._installer.is_installed(
+                    str(model.get("name", "")),
+                    str(model.get("version", "Latest")),
+                )
+            self._refresh_row_for_model(model)
+
+    def _apply_cache_dir_from_text(self) -> None:
+        value = self.cache_dir_input.text().strip()
+        self._apply_cache_dir(value or None)
+
+    def _browse_for_cache_dir(self) -> None:
+        start_dir = str(self._model_cache_dir) if self._model_cache_dir else ""
+        selected = QtWidgets.QFileDialog.getExistingDirectory(
+            self,
+            "Select model cache location",
+            start_dir,
+            QtWidgets.QFileDialog.Option.ShowDirsOnly,
+        )
+        if selected:
+            self._apply_cache_dir(selected)
+
+    def _reset_cache_dir(self) -> None:
+        self._apply_cache_dir(None)
 
     def _load_model_registry(self) -> list[dict[str, object]]:
         models: list[dict[str, object]] = []
@@ -1699,6 +1791,7 @@ class MainWindow(QtWidgets.QMainWindow):
         model_comparison_panel.model_b_combo.currentTextChanged.connect(
             self._update_comparison_state
         )
+        model_manager_panel.model_cache_dir_changed.connect(self._persist_session_state)
         advanced_options_panel.completion_notification_check.toggled.connect(
             self._set_completion_notifications_enabled
         )
@@ -2009,6 +2102,7 @@ class MainWindow(QtWidgets.QMainWindow):
             comparison_mode=comparison_panel.is_comparison_mode(),
             comparison_model_a=comparison_panel.selected_model_a(),
             comparison_model_b=comparison_panel.selected_model_b(),
+            model_cache_dir=str(self.model_manager_panel.model_cache_dir()),
             advanced_scale=advanced_panel.scale_combo.currentText(),
             advanced_tiling=advanced_panel.tiling_combo.currentText(),
             advanced_precision=advanced_panel.precision_combo.currentText(),
@@ -2037,7 +2131,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _run_model_health_checks(self) -> None:
         try:
-            run_missing_health_checks()
+            run_missing_health_checks(cache_dir=self.model_manager_panel.model_cache_dir())
         except Exception:  # noqa: BLE001
             return
 
@@ -2064,6 +2158,9 @@ class MainWindow(QtWidgets.QMainWindow):
             output_combo = self.export_presets_panel.output_format_combo
             if output_combo.findText(state.output_format) >= 0:
                 output_combo.setCurrentText(state.output_format)
+
+        if state.model_cache_dir:
+            self.model_manager_panel.set_model_cache_dir(state.model_cache_dir)
 
         advanced_panel = self.advanced_options_panel
         advanced_panel.safe_mode_check.setChecked(state.advanced_safe_mode)

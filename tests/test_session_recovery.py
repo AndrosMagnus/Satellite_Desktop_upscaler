@@ -91,12 +91,15 @@ class TestSessionRecovery(unittest.TestCase):
 
             window.input_list.clear()
             window.input_list.addItem("/tmp/autosave_input.tif")
+            cache_dir = os.path.join(tmpdir, "models")
+            window.model_manager_panel.set_model_cache_dir(cache_dir)
             window._autosave_session_state()
 
             with open(session_path, "r", encoding="utf-8") as handle:
                 payload = json.load(handle)
 
             self.assertEqual(payload["paths"], ["/tmp/autosave_input.tif"])
+            self.assertEqual(payload["model_cache_dir"], cache_dir)
             self.assertTrue(payload["dirty"])
 
     def test_restores_preferences_from_dirty_session(self) -> None:
@@ -105,6 +108,7 @@ class TestSessionRecovery(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             session_path = os.path.join(tmpdir, "session.json")
             self._set_session_env(session_path)
+            cache_dir = os.path.join(tmpdir, "models")
             payload = {
                 "dirty": True,
                 "paths": ["/tmp/input_a.tif"],
@@ -115,6 +119,7 @@ class TestSessionRecovery(unittest.TestCase):
                 "comparison_mode": True,
                 "comparison_model_a": "Satlas",
                 "comparison_model_b": "SwinIR",
+                "model_cache_dir": cache_dir,
                 "advanced_scale": "8x",
                 "advanced_tiling": "1024 px",
                 "advanced_precision": "FP32",
@@ -148,6 +153,10 @@ class TestSessionRecovery(unittest.TestCase):
             )
             self.assertEqual(comparison_panel.model_a_combo.currentText(), "Satlas")
             self.assertEqual(comparison_panel.model_b_combo.currentText(), "SwinIR")
+            self.assertEqual(
+                window.model_manager_panel.cache_dir_input.text(),
+                cache_dir,
+            )
 
             advanced_panel = window.advanced_options_panel
             self.assertFalse(advanced_panel.safe_mode_check.isChecked())

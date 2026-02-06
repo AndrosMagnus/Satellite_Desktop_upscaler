@@ -76,12 +76,17 @@ class TestPrimaryLayout(unittest.TestCase):
         )
 
     def test_model_manager_panel(self) -> None:
+        from app.model_installation import resolve_model_cache_dir
         from app.ui import MainWindow, ModelManagerPanel
 
         window = MainWindow()
         panel = window.model_manager_panel
         self.assertIsInstance(panel, ModelManagerPanel)
         self.assertEqual(panel.objectName(), "modelManagerPanel")
+        self.assertEqual(panel.cache_dir_input.objectName(), "modelCacheDirInput")
+        self.assertEqual(panel.cache_browse_button.objectName(), "modelCacheBrowseButton")
+        self.assertEqual(panel.cache_reset_button.objectName(), "modelCacheResetButton")
+        self.assertEqual(panel.cache_dir_input.text(), str(resolve_model_cache_dir()))
         self.assertEqual(panel.model_table.objectName(), "modelTable")
         self.assertEqual(panel.model_table.columnCount(), 3)
         self.assertEqual(
