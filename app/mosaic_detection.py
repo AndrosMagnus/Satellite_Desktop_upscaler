@@ -25,6 +25,14 @@ _BBOX_PATTERN = re.compile(
 )
 _GRID_PATTERNS = [
     re.compile(
+        r"(?:^|[^a-z0-9])z(?P<zoom>\d+)[^a-z0-9]+x(?P<col>\d+)[^0-9]+y(?P<row>\d+)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:^|[^a-z0-9])x(?P<col>\d+)[^0-9]+y(?P<row>\d+)[^0-9]+z(?P<zoom>\d+)",
+        re.IGNORECASE,
+    ),
+    re.compile(
         r"(?:^|[^a-z0-9])r(?:ow)?(?P<row>\d+)[^a-z0-9]+c(?:ol)?(?P<col>\d+)",
         re.IGNORECASE,
     ),
@@ -48,7 +56,7 @@ def suggest_mosaic(paths: list[str]) -> MosaicSuggestion:
         return MosaicSuggestion(False, False, False, None)
 
     bboxes: list[tuple[int, int, int, int]] = []
-    grid_indices: list[tuple[int, int]] = []
+    grid_indices: list[tuple[int, int, int | None]] = []
     for path in paths:
         name = os.path.basename(path)
         bbox = _parse_bbox(name)
@@ -75,17 +83,20 @@ def suggest_mosaic(paths: list[str]) -> MosaicSuggestion:
             if has_adjacent and has_overlap:
                 break
     elif len(grid_indices) >= 2:
-        seen = set()
-        for row, col in grid_indices:
-            if (row, col) in seen:
-                has_overlap = True
-            seen.add((row, col))
-        for idx, first in enumerate(grid_indices):
-            for second in grid_indices[idx + 1 :]:
-                if abs(first[0] - second[0]) + abs(first[1] - second[1]) == 1:
-                    has_adjacent = True
+        for indices in _group_grid_indices(grid_indices).values():
+            seen = set()
+            for row, col in indices:
+                if (row, col) in seen:
+                    has_overlap = True
+                seen.add((row, col))
+            for idx, first in enumerate(indices):
+                for second in indices[idx + 1 :]:
+                    if abs(first[0] - second[0]) + abs(first[1] - second[1]) == 1:
+                        has_adjacent = True
+                        break
+                if has_adjacent:
                     break
-            if has_adjacent:
+            if has_adjacent and has_overlap:
                 break
 
     if not (has_adjacent or has_overlap):
@@ -104,7 +115,7 @@ def preview_stitch_bounds(paths: list[str]) -> StitchPreview | None:
         return None
 
     bboxes: list[tuple[int, int, int, int]] = []
-    grid_indices: list[tuple[int, int]] = []
+    grid_indices: list[tuple[int, int, int | None]] = []
     for path in paths:
         name = os.path.basename(path)
         bbox = _parse_bbox(name)
@@ -118,7 +129,9 @@ def preview_stitch_bounds(paths: list[str]) -> StitchPreview | None:
     if len(bboxes) >= 2:
         return _preview_from_bboxes(bboxes)
     if len(grid_indices) >= 2:
-        return _preview_from_grid(grid_indices)
+        preview_indices = _pick_preview_group(grid_indices)
+        if preview_indices is not None:
+            return _preview_from_grid(preview_indices)
     return None
 
 
@@ -135,11 +148,16 @@ def _parse_bbox(name: str) -> tuple[int, int, int, int] | None:
     return x, y, w, h
 
 
-def _parse_grid_indices(name: str) -> tuple[int, int] | None:
+def _parse_grid_indices(name: str) -> tuple[int, int, int | None] | None:
     for pattern in _GRID_PATTERNS:
         match = pattern.search(name)
         if match:
-            return int(match.group("row")), int(match.group("col"))
+            zoom = match.groupdict().get("zoom")
+            return (
+                int(match.group("row")),
+                int(match.group("col")),
+                int(zoom) if zoom is not None else None,
+            )
     return None
 
 
@@ -214,3 +232,24 @@ def _preview_from_grid(grid_indices: list[tuple[int, int]]) -> StitchPreview:
 
 def _format_boundaries(values: list[int]) -> str:
     return ", ".join(str(value) for value in values)
+
+
+def _group_grid_indices(
+    grid_indices: list[tuple[int, int, int | None]]
+) -> dict[int | None, list[tuple[int, int]]]:
+    grouped: dict[int | None, list[tuple[int, int]]] = {}
+    for row, col, zoom in grid_indices:
+        grouped.setdefault(zoom, []).append((row, col))
+    return grouped
+
+
+def _pick_preview_group(
+    grid_indices: list[tuple[int, int, int | None]]
+) -> list[tuple[int, int]] | None:
+    grouped = _group_grid_indices(grid_indices)
+    candidates = [
+        indices for indices in grouped.values() if len(indices) >= 2
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=len)

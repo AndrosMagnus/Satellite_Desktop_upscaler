@@ -59,6 +59,26 @@ class TestMosaicDetection(unittest.TestCase):
         self.assertFalse(suggestion.is_mosaic)
         self.assertIsNone(suggestion.message)
 
+    def test_detects_adjacent_xyz_tiles(self) -> None:
+        suggestion = suggest_mosaic(
+            [
+                "/tmp/scene_z12_x10_y20.tif",
+                "/tmp/scene_z12_x11_y20.tif",
+            ]
+        )
+        self.assertTrue(suggestion.is_mosaic)
+        self.assertTrue(suggestion.has_adjacent)
+        self.assertFalse(suggestion.has_overlap)
+
+    def test_ignores_mixed_zoom_xyz_tiles(self) -> None:
+        suggestion = suggest_mosaic(
+            [
+                "/tmp/scene_z12_x10_y20.tif",
+                "/tmp/scene_z13_x11_y20.tif",
+            ]
+        )
+        self.assertFalse(suggestion.is_mosaic)
+
 
 if __name__ == "__main__":
     unittest.main()
