@@ -84,6 +84,132 @@ class TestRasterFileStitching(unittest.TestCase):
             with self.assertRaises(stitching.ReprojectionNotSupportedError):
                 stitching._stitch_with_rasterio(["a.tif", "b.tif"], "out.tif")
 
+    def test_rasterio_rejects_mismatched_band_descriptions(self) -> None:
+        fake_rasterio = types.ModuleType("rasterio")
+        fake_merge = types.ModuleType("rasterio.merge")
+
+        class FakeDataset:
+            def __init__(self, crs, descriptions):
+                self.crs = crs
+                self.count = 2
+                self.descriptions = descriptions
+                self.nodata = None
+                self.meta = {
+                    "driver": "GTiff",
+                    "dtype": "uint8",
+                    "count": 2,
+                    "crs": crs,
+                    "transform": "t",
+                }
+
+            def tags(self, **_kwargs):
+                return {}
+
+            def tag_namespaces(self, **_kwargs):
+                return ()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        datasets = {
+            "a.tif": FakeDataset("EPSG:4326", ("B1", "B2")),
+            "b.tif": FakeDataset("EPSG:4326", ("B2", "B1")),
+        }
+
+        def fake_open(path, *args, **kwargs):
+            return datasets[path]
+
+        def fake_merge_call(_datasets):
+            raise AssertionError("merge should not be called when band descriptions mismatch")
+
+        fake_rasterio.open = fake_open
+        fake_merge.merge = fake_merge_call
+
+        with mock.patch.dict(sys.modules, {"rasterio": fake_rasterio, "rasterio.merge": fake_merge}):
+            with self.assertRaises(ValueError):
+                stitching._stitch_with_rasterio(["a.tif", "b.tif"], "out.tif")
+
+    def test_rasterio_preserves_band_descriptions_and_nodata(self) -> None:
+        fake_rasterio = types.ModuleType("rasterio")
+        fake_merge = types.ModuleType("rasterio.merge")
+        writer_holder: dict[str, object] = {}
+
+        class FakeDataset:
+            def __init__(self, crs, descriptions, nodata):
+                self.crs = crs
+                self.count = 2
+                self.descriptions = descriptions
+                self.nodata = nodata
+                self.meta = {
+                    "driver": "GTiff",
+                    "dtype": "uint8",
+                    "count": 2,
+                    "crs": crs,
+                    "transform": "t",
+                }
+
+            def tags(self, **_kwargs):
+                return {}
+
+            def tag_namespaces(self, **_kwargs):
+                return ()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        class FakeWriter:
+            def __init__(self, meta):
+                self.meta = meta
+                self.descriptions = None
+                self.written = None
+
+            def write(self, mosaic):
+                self.written = mosaic
+
+            def update_tags(self, **_kwargs):
+                return None
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        datasets = {
+            "a.tif": FakeDataset("EPSG:4326", (None, None), None),
+            "b.tif": FakeDataset("EPSG:4326", ("B1", "B2"), -9999.0),
+        }
+
+        def fake_open(path, mode="r", **kwargs):
+            if mode == "w":
+                writer = FakeWriter(kwargs)
+                writer_holder["writer"] = writer
+                return writer
+            return datasets[path]
+
+        class FakeMosaic:
+            def __init__(self):
+                self.shape = (2, 2, 2)
+
+        def fake_merge_call(_datasets):
+            return FakeMosaic(), "transform"
+
+        fake_rasterio.open = fake_open
+        fake_merge.merge = fake_merge_call
+
+        with mock.patch.dict(sys.modules, {"rasterio": fake_rasterio, "rasterio.merge": fake_merge}):
+            stitching._stitch_with_rasterio(["a.tif", "b.tif"], "out.tif")
+
+        writer = writer_holder["writer"]
+        self.assertEqual(writer.meta["nodata"], -9999.0)
+        self.assertEqual(writer.descriptions, ("B1", "B2"))
+
     def test_gdal_cli_invocation(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             output = Path(temp_dir) / "out.tif"

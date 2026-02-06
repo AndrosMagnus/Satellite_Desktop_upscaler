@@ -184,6 +184,14 @@ def _stitch_with_rasterio(paths: Sequence[str], output_path: str) -> str:
             raise ReprojectionNotSupportedError(
                 "Reprojection is not supported in v1; all input rasters must share the same CRS."
             )
+        band_count = getattr(datasets[0], "count", 0)
+        if band_count <= 0:
+            raise ValueError("Input rasters must contain at least one band.")
+        for dataset in datasets[1:]:
+            if dataset.count != band_count:
+                raise ValueError("All tiles must share the same band count.")
+        band_descriptions = _resolve_band_descriptions(datasets, band_count)
+        nodata_value = _resolve_nodata_value(datasets)
         mosaic, out_transform = merge(datasets)
         out_meta = datasets[0].meta.copy()
         out_meta.update(
@@ -193,14 +201,13 @@ def _stitch_with_rasterio(paths: Sequence[str], output_path: str) -> str:
                 "transform": out_transform,
             }
         )
-        if datasets[0].nodata is not None:
-            out_meta["nodata"] = datasets[0].nodata
+        if nodata_value is not None:
+            out_meta["nodata"] = nodata_value
 
         with rasterio.open(output_path, "w", **out_meta) as dest:
             dest.write(mosaic)
-            descriptions = datasets[0].descriptions
-            if descriptions and any(descriptions):
-                dest.descriptions = descriptions
+            if band_descriptions and any(band_descriptions):
+                dest.descriptions = band_descriptions
             _copy_rasterio_metadata(datasets[0], dest)
 
     return output_path
@@ -266,6 +273,38 @@ def _copy_rasterio_metadata(source: object, dest: object) -> None:
                 setattr(dest, attr_name, value)
             except Exception:  # pragma: no cover - rasterio metadata guard
                 continue
+
+
+def _resolve_band_descriptions(
+    datasets: Sequence[object], band_count: int
+) -> tuple[str | None, ...] | None:
+    descriptions: tuple[str | None, ...] | None = None
+    for dataset in datasets:
+        raw = getattr(dataset, "descriptions", None)
+        if not raw:
+            continue
+        if len(raw) != band_count:
+            raise ValueError("Band descriptions length must match band count.")
+        if any(raw):
+            current = tuple(raw)
+            if descriptions is None:
+                descriptions = current
+            elif current != descriptions:
+                raise ValueError("Band descriptions must match across tiles.")
+    return descriptions
+
+
+def _resolve_nodata_value(datasets: Sequence[object]) -> float | None:
+    nodata_value: float | None = None
+    for dataset in datasets:
+        value = getattr(dataset, "nodata", None)
+        if value is None:
+            continue
+        if nodata_value is None:
+            nodata_value = value
+        elif value != nodata_value:
+            raise ValueError("All tiles must share the same nodata value.")
+    return nodata_value
 
 
 def _tag_namespaces(source: object, band_index: int | None = None) -> tuple[str, ...]:
