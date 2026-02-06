@@ -1,0 +1,12 @@
+[
+  {
+    "name": "cloud_bank",
+    "reference": "ref_1.json",
+    "prediction": "pred_1.json"
+  },
+  {
+    "name": "storm_cell",
+    "reference": "ref_2.json",
+    "prediction": "pred_2.json"
+  }
+]
