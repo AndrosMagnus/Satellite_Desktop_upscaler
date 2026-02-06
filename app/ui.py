@@ -962,6 +962,12 @@ class ModelComparisonPanel(QtWidgets.QGroupBox):
         mode_row_layout.addWidget(mode_label)
         mode_row_layout.addWidget(mode_combo, 1)
 
+        helper_label = QtWidgets.QLabel(
+            "Single-image only. Compare up to two models on the selected image."
+        )
+        helper_label.setObjectName("comparisonHelperLabel")
+        helper_label.setWordWrap(True)
+
         model_a_row = QtWidgets.QWidget()
         model_a_row_layout = QtWidgets.QHBoxLayout(model_a_row)
         model_a_row_layout.setContentsMargins(0, 0, 0, 0)
@@ -974,19 +980,22 @@ class ModelComparisonPanel(QtWidgets.QGroupBox):
         model_b_row = QtWidgets.QWidget()
         model_b_row_layout = QtWidgets.QHBoxLayout(model_b_row)
         model_b_row_layout.setContentsMargins(0, 0, 0, 0)
-        model_b_label = QtWidgets.QLabel("Model B")
+        model_b_label = QtWidgets.QLabel("Model B (optional)")
         model_b_combo = QtWidgets.QComboBox()
         model_b_combo.setObjectName("comparisonModelBCombo")
         model_b_row_layout.addWidget(model_b_label)
         model_b_row_layout.addWidget(model_b_combo, 1)
 
         layout.addWidget(mode_row)
+        layout.addWidget(helper_label)
         layout.addWidget(model_a_row)
         layout.addWidget(model_b_row)
 
         self.mode_combo = mode_combo
         self.model_a_combo = model_a_combo
         self.model_b_combo = model_b_combo
+        self.helper_label = helper_label
+        self.model_b_label = model_b_label
         self._models_available = False
         self._load_models()
         self._apply_mode(mode_combo.currentText())
