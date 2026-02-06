@@ -86,6 +86,32 @@ class TestLicenseVerification(unittest.TestCase):
                 f"{name} license must be permissive",
             )
 
+    def test_unverified_models_not_bundled(self) -> None:
+        verification = self._load_json(self.verification_path)
+        registry = self._load_json(self.registry_path)
+        registry_by_name = {entry["name"]: entry for entry in registry}
+        verification_by_name = {entry["name"]: entry for entry in verification}
+
+        unverified_models = {"SRGAN adapted to EO", "SenGLEAN"}
+        for name in unverified_models:
+            self.assertIn(
+                name,
+                verification_by_name,
+                f"{name} must be listed in license_verification.json",
+            )
+            verification_entry = verification_by_name[name]
+            self.assertEqual(
+                verification_entry["license"],
+                "UNVERIFIED",
+                f"{name} license must remain UNVERIFIED until confirmed",
+            )
+            registry_entry = registry_by_name.get(name)
+            self.assertIsNotNone(registry_entry, f"{name} missing from registry.json")
+            self.assertFalse(
+                bool(registry_entry.get("bundled")),
+                f"{name} must not be bundled until license confirmed",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

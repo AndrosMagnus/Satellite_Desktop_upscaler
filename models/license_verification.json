@@ -10,5 +10,17 @@
     "license": "Apache-2.0",
     "source_url": "https://github.com/allenai/satlas-super-resolution/blob/main/LICENSE.txt",
     "verified_at": "2026-02-06"
+  },
+  {
+    "name": "SRGAN adapted to EO",
+    "license": "UNVERIFIED",
+    "source_url": "https://github.com/ESAOpenSR/SRGAN",
+    "verified_at": "2026-02-06"
+  },
+  {
+    "name": "SenGLEAN",
+    "license": "UNVERIFIED",
+    "source_url": "https://ayush12gupta.github.io/publications/senglean.html",
+    "verified_at": "2026-02-06"
   }
 ]
