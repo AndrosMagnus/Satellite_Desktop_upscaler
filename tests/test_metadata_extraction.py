@@ -37,6 +37,23 @@ def _build_jpeg(width: int, height: int) -> bytes:
     return b"\xff\xd8" + b"\xff\xc0" + struct.pack(">H", length) + sof_data + b"\xff\xd9"
 
 
+def _build_jpeg_with_app0(width: int, height: int) -> bytes:
+    app0_payload = b"JFIF\x00\x01\x02\x00\x00\x01\x00\x01\x00\x00"
+    app0_length = len(app0_payload) + 2
+    sof_data = b"\x08" + struct.pack(">HH", height, width) + b"\x01\x01\x11\x00"
+    sof_length = len(sof_data) + 2
+    return (
+        b"\xff\xd8"
+        + b"\xff\xe0"
+        + struct.pack(">H", app0_length)
+        + app0_payload
+        + b"\xff\xc0"
+        + struct.pack(">H", sof_length)
+        + sof_data
+        + b"\xff\xd9"
+    )
+
+
 def _build_geotiff(width: int, height: int) -> bytes:
     header = b"II*\x00" + struct.pack("<I", 8)
     entries = 3
@@ -76,6 +93,18 @@ def test_extract_jpeg_metadata() -> None:
         assert info.format == "JPEG"
         assert info.width == 40
         assert info.height == 22
+    finally:
+        os.remove(path)
+
+
+def test_extract_jpeg_metadata_with_app0() -> None:
+    path = _write_temp(_build_jpeg_with_app0(52, 31))
+    try:
+        info = extract_image_header_info(path)
+        assert info is not None
+        assert info.format == "JPEG"
+        assert info.width == 52
+        assert info.height == 31
     finally:
         os.remove(path)
 
