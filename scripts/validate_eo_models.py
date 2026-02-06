@@ -97,13 +97,13 @@ def main() -> int:
         raise ValueError(f"Unsupported model(s): {', '.join(missing)}")
 
     manifest_path = _sample_manifest_path()
-    samples = load_samples_from_manifest(manifest_path)
     bands = _parse_bands(args.bands)
 
     output_root = args.output
     output_root.mkdir(parents=True, exist_ok=True)
 
     for model_name in models:
+        samples = load_samples_from_manifest(manifest_path, model_name=model_name)
         report = evaluate_dataset(samples, data_range=args.data_range)
         output_dir = output_root / _slugify(model_name)
         output_dir.mkdir(parents=True, exist_ok=True)

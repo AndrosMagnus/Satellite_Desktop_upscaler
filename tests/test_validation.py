@@ -92,6 +92,37 @@ class TestValidationMetrics(unittest.TestCase):
             self.assertEqual(samples[0].name, "sample")
             self.assertEqual(len(samples), 1)
 
+    def test_load_samples_from_manifest_uses_model_predictions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            reference_path = tmp_path / "ref.json"
+            prediction_a_path = tmp_path / "pred_a.json"
+            prediction_b_path = tmp_path / "pred_b.json"
+            manifest_path = tmp_path / "manifest.json"
+
+            reference_path.write_text(json.dumps([[1.0]]), encoding="utf-8")
+            prediction_a_path.write_text(json.dumps([[1.0]]), encoding="utf-8")
+            prediction_b_path.write_text(json.dumps([[0.0]]), encoding="utf-8")
+            manifest_path.write_text(
+                json.dumps(
+                    [
+                        {
+                            "name": "sample",
+                            "reference": "ref.json",
+                            "predictions": {
+                                "ModelA": "pred_a.json",
+                                "ModelB": "pred_b.json",
+                            },
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            samples = load_samples_from_manifest(manifest_path, model_name="ModelB")
+
+            self.assertEqual(samples[0].prediction[0][0][0], 0.0)
+
 
 class TestValidationCLI(unittest.TestCase):
     def test_sample_cli_generates_report_and_previews(self) -> None:

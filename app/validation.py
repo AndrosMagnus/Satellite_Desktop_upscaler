@@ -177,7 +177,10 @@ def report_to_dict(report: EvaluationReport) -> dict:
     }
 
 
-def load_samples_from_manifest(manifest_path: Path) -> list[SamplePair]:
+def load_samples_from_manifest(
+    manifest_path: Path,
+    model_name: str | None = None,
+) -> list[SamplePair]:
     data = json.loads(manifest_path.read_text(encoding="utf-8"))
     if not isinstance(data, list):
         raise ValueError("Manifest must be a list of sample entries.")
@@ -189,7 +192,7 @@ def load_samples_from_manifest(manifest_path: Path) -> list[SamplePair]:
             raise ValueError("Manifest entries must be objects.")
         name = entry.get("name") or f"sample_{index}"
         reference_path = _resolve_manifest_path(base_dir, entry.get("reference"))
-        prediction_path = _resolve_manifest_path(base_dir, entry.get("prediction"))
+        prediction_path = _resolve_prediction_path(base_dir, entry, model_name)
 
         reference = normalize_image(_load_json_image(reference_path))
         prediction = normalize_image(_load_json_image(prediction_path))
@@ -199,6 +202,35 @@ def load_samples_from_manifest(manifest_path: Path) -> list[SamplePair]:
     if not samples:
         raise ValueError("Manifest did not include any samples.")
     return samples
+
+
+def _resolve_prediction_path(
+    base_dir: Path,
+    entry: dict,
+    model_name: str | None,
+) -> Path:
+    prediction_value = entry.get("prediction")
+    predictions_value = entry.get("predictions")
+
+    if predictions_value is not None and not isinstance(predictions_value, dict):
+        raise ValueError("Manifest 'predictions' must be an object mapping model names to paths.")
+
+    if model_name:
+        if isinstance(predictions_value, dict) and model_name in predictions_value:
+            value = predictions_value[model_name]
+        elif prediction_value is not None:
+            value = prediction_value
+        else:
+            raise ValueError(f"Manifest entry missing prediction for model '{model_name}'.")
+    else:
+        if prediction_value is not None:
+            value = prediction_value
+        elif predictions_value is not None:
+            raise ValueError("Manifest entries with 'predictions' require a model_name.")
+        else:
+            raise ValueError("Manifest entries must include 'reference' and 'prediction' paths.")
+
+    return _resolve_manifest_path(base_dir, value)
 
 
 def write_preview_ppm(

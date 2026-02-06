@@ -2,11 +2,19 @@
   {
     "name": "sample_urban",
     "reference": "ref_1.json",
-    "prediction": "pred_1.json"
+    "prediction": "pred_1.json",
+    "predictions": {
+      "SatelliteSR": "pred_1.json",
+      "SRGAN adapted to EO": "pred_1.json"
+    }
   },
   {
     "name": "sample_coastal",
     "reference": "ref_2.json",
-    "prediction": "pred_2.json"
+    "prediction": "pred_2.json",
+    "predictions": {
+      "SatelliteSR": "pred_2.json",
+      "SRGAN adapted to EO": "pred_2.json"
+    }
   }
 ]
