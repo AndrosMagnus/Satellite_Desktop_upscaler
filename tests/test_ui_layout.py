@@ -1,4 +1,5 @@
 import os
+import tempfile
 import unittest
 
 
@@ -339,6 +340,26 @@ class TestPrimaryLayout(unittest.TestCase):
         self.assertTrue(panel.scale_combo.isEnabled())
         self.assertTrue(panel.tiling_combo.isEnabled())
         self.assertTrue(panel.seam_blend_check.isEnabled())
+
+    def test_run_settings_capture_compute_override(self) -> None:
+        from app.ui import MainWindow
+
+        window = MainWindow()
+        handle = tempfile.NamedTemporaryFile(suffix=".tif", delete=False)
+        path = handle.name
+        handle.close()
+        try:
+            window.input_list.add_paths([path])
+            window.input_list.clearSelection()
+            window.input_list.item(0).setSelected(True)
+            window.advanced_options_panel.compute_combo.setCurrentText("CPU")
+
+            window._start_run()
+
+            self.assertIsNotNone(window.last_run_settings)
+            self.assertEqual(window.last_run_settings.compute, "CPU")
+        finally:
+            os.unlink(path)
 
     def test_comparison_controls(self) -> None:
         from app.ui import MainWindow, PreviewViewer

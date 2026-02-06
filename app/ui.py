@@ -15,6 +15,13 @@ from app.mosaic_detection import preview_stitch_bounds, suggest_mosaic
 from app.metadata import extract_image_header_info
 from app.model_installation import ModelInstaller, resolve_model_cache_dir
 from app.output_metadata import metadata_loss_warning
+from app.run_settings import (
+    RunSettings,
+    parse_compute,
+    parse_precision,
+    parse_scale,
+    parse_tiling,
+)
 from app.session import SessionState, SessionStore
 
 
@@ -1664,6 +1671,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.status_bar = status_bar
         self.run_button: QtWidgets.QPushButton | None = None
         self._batch_mode = False
+        self.last_run_settings: RunSettings | None = None
 
         add_files_button.clicked.connect(self._select_files)
         add_folder_button.clicked.connect(self._select_folder)
@@ -1868,6 +1876,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 error_code="IO-001",
                 can_retry=True,
             )
+        self.last_run_settings = self._current_run_settings()
         self._schedule_run_completion()
 
     def _selected_input_paths(self) -> list[str]:
@@ -1875,6 +1884,17 @@ class MainWindow(QtWidgets.QMainWindow):
         if paths == [self.input_list.placeholder_text]:
             return []
         return [path for path in paths if path]
+
+    def _current_run_settings(self) -> RunSettings:
+        panel = self.advanced_options_panel
+        return RunSettings(
+            scale=parse_scale(panel.scale_combo.currentText()),
+            tiling=parse_tiling(panel.tiling_combo.currentText()),
+            precision=parse_precision(panel.precision_combo.currentText()),
+            compute=parse_compute(panel.compute_combo.currentText()),
+            seam_blend=panel.seam_blend_check.isChecked(),
+            safe_mode=panel.safe_mode_check.isChecked(),
+        )
 
     def _show_error_dialog(
         self,
