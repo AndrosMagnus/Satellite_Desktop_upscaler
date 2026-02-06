@@ -3,180 +3,252 @@
     "name": "Real-ESRGAN",
     "source_url": "https://github.com/xinntao/Real-ESRGAN",
     "license": "BSD-3-Clause",
-    "license_status": "verified",
-    "license_acceptance_required": false,
-    "bundled": true,
     "gpu_required": false,
     "cpu_supported": true,
-    "bands_supported": ["RGB"],
-    "scales": [2, 4],
+    "bands_supported": [
+      "RGB"
+    ],
+    "scales": [
+      2,
+      4
+    ],
     "weights_url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth",
     "checksum": "sha256:TODO",
-    "default_options": {"scale": 4, "tiling": "auto", "precision": "auto"}
+    "default_options": {
+      "scale": 4,
+      "tiling": "auto",
+      "precision": "auto"
+    }
   },
   {
     "name": "Satlas",
     "source_url": "https://github.com/allenai/satlas-super-resolution",
     "license": "Apache-2.0",
-    "license_status": "verified",
-    "license_acceptance_required": false,
-    "bundled": true,
     "gpu_required": false,
     "cpu_supported": true,
-    "bands_supported": ["RGB", "Sentinel-2"],
-    "scales": [4],
+    "bands_supported": [
+      "RGB",
+      "Sentinel-2"
+    ],
+    "scales": [
+      4
+    ],
     "weights_url": "https://pub-25c498004d1e4d4c8da69b2c05676836.r2.dev/esrgan_1S2.pth",
     "checksum": "sha256:TODO",
-    "default_options": {"scale": 4, "tiling": "auto", "precision": "auto"}
+    "default_options": {
+      "scale": 4,
+      "tiling": "auto",
+      "precision": "auto"
+    }
   },
   {
     "name": "SwinIR",
     "source_url": "TBD",
     "license": "UNVERIFIED",
-    "license_status": "unverified",
-    "license_acceptance_required": false,
-    "bundled": false,
     "gpu_required": false,
     "cpu_supported": true,
-    "bands_supported": ["RGB"],
-    "scales": [2, 4],
+    "bands_supported": [
+      "RGB"
+    ],
+    "scales": [
+      2,
+      4
+    ],
     "weights_url": "TBD",
     "checksum": "sha256:TODO",
-    "default_options": {"scale": 4, "tiling": "auto", "precision": "auto"}
+    "default_options": {
+      "scale": 4,
+      "tiling": "auto",
+      "precision": "auto"
+    }
   },
   {
     "name": "SatelliteSR",
     "source_url": "TBD",
     "license": "UNVERIFIED",
-    "license_status": "unverified",
-    "license_acceptance_required": false,
-    "bundled": false,
     "gpu_required": false,
     "cpu_supported": true,
-    "bands_supported": ["RGB", "Sentinel-2"],
-    "scales": [2, 4],
+    "bands_supported": [
+      "RGB",
+      "Sentinel-2"
+    ],
+    "scales": [
+      2,
+      4
+    ],
     "weights_url": "TBD",
     "checksum": "sha256:TODO",
-    "default_options": {"scale": 4, "tiling": "auto", "precision": "auto"}
+    "default_options": {
+      "scale": 4,
+      "tiling": "auto",
+      "precision": "auto"
+    }
   },
   {
     "name": "MRDAM",
     "source_url": "TBD",
     "license": "UNVERIFIED",
-    "license_status": "unverified",
-    "license_acceptance_required": false,
-    "bundled": false,
     "gpu_required": false,
     "cpu_supported": true,
-    "bands_supported": ["RGB", "Sentinel-2"],
-    "scales": [2, 4],
+    "bands_supported": [
+      "RGB",
+      "Sentinel-2"
+    ],
+    "scales": [
+      2,
+      4
+    ],
     "weights_url": "TBD",
     "checksum": "sha256:TODO",
-    "default_options": {"scale": 4, "tiling": "auto", "precision": "auto"}
+    "default_options": {
+      "scale": 4,
+      "tiling": "auto",
+      "precision": "auto"
+    }
   },
   {
     "name": "SRGAN adapted to EO",
     "source_url": "https://github.com/ESAOpenSR/SRGAN",
     "license": "UNVERIFIED",
-    "license_status": "unverified",
-    "license_acceptance_required": false,
-    "bundled": false,
     "gpu_required": false,
     "cpu_supported": true,
-    "bands_supported": ["RGB", "Sentinel-2"],
-    "scales": [2, 4],
+    "bands_supported": [
+      "RGB",
+      "Sentinel-2"
+    ],
+    "scales": [
+      2,
+      4
+    ],
     "weights_url": "TBD",
     "checksum": "sha256:TODO",
-    "default_options": {"scale": 4, "tiling": "auto", "precision": "auto"}
+    "default_options": {
+      "scale": 4,
+      "tiling": "auto",
+      "precision": "auto"
+    }
   },
   {
     "name": "S2DR3",
     "source_url": "TBD",
     "license": "UNVERIFIED",
-    "license_status": "unverified",
-    "license_acceptance_required": false,
-    "bundled": false,
     "gpu_required": false,
     "cpu_supported": true,
-    "bands_supported": ["Sentinel-2"],
-    "scales": [2, 4],
+    "bands_supported": [
+      "Sentinel-2"
+    ],
+    "scales": [
+      2,
+      4
+    ],
     "weights_url": "TBD",
     "checksum": "sha256:TODO",
-    "default_options": {"scale": 4, "tiling": "auto", "precision": "auto"}
+    "default_options": {
+      "scale": 4,
+      "tiling": "auto",
+      "precision": "auto"
+    }
   },
   {
     "name": "SEN2SR",
     "source_url": "https://github.com/ESAOpenSR/OpenSR",
     "license": "UNVERIFIED",
-    "license_status": "unverified",
-    "license_acceptance_required": false,
-    "bundled": false,
     "gpu_required": false,
     "cpu_supported": true,
-    "bands_supported": ["Sentinel-2"],
-    "scales": [2],
+    "bands_supported": [
+      "Sentinel-2"
+    ],
+    "scales": [
+      2
+    ],
     "weights_url": "TBD",
     "checksum": "sha256:TODO",
-    "default_options": {"scale": 2, "tiling": "auto", "precision": "auto"}
+    "default_options": {
+      "scale": 2,
+      "tiling": "auto",
+      "precision": "auto"
+    }
   },
   {
     "name": "LDSR-S2",
     "source_url": "https://github.com/ESAOpenSR/OpenSR",
     "license": "UNVERIFIED",
-    "license_status": "unverified",
-    "license_acceptance_required": false,
-    "bundled": false,
     "gpu_required": false,
     "cpu_supported": true,
-    "bands_supported": ["Landsat"],
-    "scales": [2],
+    "bands_supported": [
+      "Landsat"
+    ],
+    "scales": [
+      2
+    ],
     "weights_url": "TBD",
     "checksum": "sha256:TODO",
-    "default_options": {"scale": 2, "tiling": "auto", "precision": "auto"}
+    "default_options": {
+      "scale": 2,
+      "tiling": "auto",
+      "precision": "auto"
+    }
   },
   {
     "name": "SenGLEAN",
     "source_url": "https://ayush12gupta.github.io/publications/senglean.html",
     "license": "UNVERIFIED",
-    "license_status": "unverified",
-    "license_acceptance_required": false,
-    "bundled": false,
     "gpu_required": true,
     "cpu_supported": false,
-    "bands_supported": ["Sentinel-2"],
-    "scales": [2, 4],
+    "bands_supported": [
+      "Sentinel-2"
+    ],
+    "scales": [
+      2,
+      4
+    ],
     "weights_url": "TBD",
     "checksum": "sha256:TODO",
-    "default_options": {"scale": 4, "tiling": "auto", "precision": "auto"}
+    "default_options": {
+      "scale": 4,
+      "tiling": "auto",
+      "precision": "auto"
+    }
   },
   {
     "name": "Swin2-MoSE",
     "source_url": "https://github.com/IMPLabUniPr/swin2-mose",
     "license": "GPL-2.0",
-    "license_status": "verified",
-    "license_acceptance_required": true,
-    "bundled": false,
     "gpu_required": true,
     "cpu_supported": false,
-    "bands_supported": ["RGB"],
-    "scales": [2, 4],
+    "bands_supported": [
+      "RGB"
+    ],
+    "scales": [
+      2,
+      4
+    ],
     "weights_url": "TBD",
     "checksum": "sha256:TODO",
-    "default_options": {"scale": 4, "tiling": "auto", "precision": "auto"}
+    "default_options": {
+      "scale": 4,
+      "tiling": "auto",
+      "precision": "auto"
+    }
   },
   {
     "name": "DSen2",
     "source_url": "https://github.com/lanha/DSen2",
     "license": "GPL-3.0",
-    "license_status": "verified",
-    "license_acceptance_required": true,
-    "bundled": false,
     "gpu_required": false,
     "cpu_supported": true,
-    "bands_supported": ["Sentinel-2"],
-    "scales": [2],
+    "bands_supported": [
+      "Sentinel-2"
+    ],
+    "scales": [
+      2
+    ],
     "weights_url": "TBD",
     "checksum": "sha256:TODO",
-    "default_options": {"scale": 2, "tiling": "auto", "precision": "auto"}
+    "default_options": {
+      "scale": 2,
+      "tiling": "auto",
+      "precision": "auto"
+    }
   }
 ]
