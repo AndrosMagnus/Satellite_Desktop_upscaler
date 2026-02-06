@@ -1,0 +1,35 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from app.model_wrapper import ModelWrapper
+
+
+_ENTRYPOINTS: dict[str, str] = {
+    "SatelliteSR": str(
+        Path(__file__).resolve().parent / "model_wrappers" / "satellitesr_wrapper.py"
+    ),
+}
+
+
+def resolve_model_entrypoint(model_name: str) -> str | None:
+    return _ENTRYPOINTS.get(model_name)
+
+
+def build_model_wrapper(
+    model_name: str,
+    version: str,
+    *,
+    base_dir: Path | None = None,
+    cache_dir: Path | None = None,
+) -> ModelWrapper:
+    entrypoint = resolve_model_entrypoint(model_name)
+    if not entrypoint:
+        raise ValueError(f"No entrypoint registered for model '{model_name}'")
+    return ModelWrapper.from_installation(
+        model_name,
+        version,
+        entrypoint=entrypoint,
+        base_dir=base_dir,
+        cache_dir=cache_dir,
+    )

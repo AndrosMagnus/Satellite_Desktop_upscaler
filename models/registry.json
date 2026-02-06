@@ -76,7 +76,7 @@
   },
   {
     "name": "SatelliteSR",
-    "source_url": "TBD",
+    "source_url": "https://github.com/kmalhan/SatelliteSR",
     "license": "UNVERIFIED",
     "gpu_required": false,
     "cpu_supported": true,
@@ -88,14 +88,20 @@
       2,
       4
     ],
-    "weights_url": "TBD",
-    "checksum": "sha256:TODO",
+    "weights_url": "models/weights/satellitesr_dummy.bin",
+    "checksum": "sha256:3c290eb38c0b6d07a729fdbae278663c34a44d88363b62eff2e906b3c8e59f6b",
     "default_options": {
       "scale": 4,
       "tiling": "auto",
       "precision": "auto"
     },
-    "dependencies": []
+    "dependencies": [
+      "torch==2.1.2",
+      "torchvision==0.16.2",
+      "numpy==1.26.4",
+      "opencv-python==4.8.1.78",
+      "Pillow==10.2.0"
+    ]
   },
   {
     "name": "MRDAM",
