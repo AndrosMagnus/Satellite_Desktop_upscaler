@@ -302,6 +302,21 @@ class TestPrimaryLayout(unittest.TestCase):
         self.assertEqual(swipe.slider.maximum(), 100)
         self.assertEqual(swipe.slider.value(), 50)
 
+    def test_swipe_placeholder_clears_before_image(self) -> None:
+        from PySide6 import QtGui
+
+        from app.ui import MainWindow
+
+        window = MainWindow()
+        image = QtGui.QImage(10, 10, QtGui.QImage.Format.Format_RGB32)
+        image.fill(QtGui.QColor("red"))
+
+        window.comparison_viewer.set_before_image(image)
+        self.assertTrue(window.comparison_viewer.swipe.view.has_before_image())
+
+        window.comparison_viewer.set_before_placeholder("Preview will appear here")
+        self.assertFalse(window.comparison_viewer.swipe.view.has_before_image())
+
     def test_system_info_panel(self) -> None:
         from app.ui import MainWindow, SystemInfoPanel
 

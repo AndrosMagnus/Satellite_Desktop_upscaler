@@ -372,6 +372,7 @@ class ComparisonViewer(QtWidgets.QWidget):
 
     def set_before_placeholder(self, text: str) -> None:
         self.side_by_side.set_before_placeholder(text)
+        self.swipe.set_before_image(None)
         self.swipe.set_placeholder(text)
 
     def set_after_placeholder(self, text: str) -> None:
