@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import tempfile
 import unittest
 
 
@@ -38,6 +39,19 @@ class TestCompletionNotifications(unittest.TestCase):
         if cls.app is None:
             cls.app = QtWidgets.QApplication([])
 
+    def _add_temp_input(self, window: "QtWidgets.QMainWindow") -> str:
+        handle = tempfile.NamedTemporaryFile(delete=False)
+        handle.close()
+        window.input_list.add_paths([handle.name])
+        window.input_list.clearSelection()
+        window.input_list.item(0).setSelected(True)
+        QtWidgets.QApplication.processEvents()
+        return handle.name
+
+    def _flush_events(self) -> None:
+        QtWidgets.QApplication.processEvents()
+        QtWidgets.QApplication.processEvents()
+
     def test_completion_notifications_are_optional(self) -> None:
         from app.ui import MainWindow
 
@@ -45,17 +59,21 @@ class TestCompletionNotifications(unittest.TestCase):
         window = MainWindow(notification_manager=fake_manager)
         notification_check = window.advanced_options_panel.completion_notification_check
 
-        window.workflow_stage_actions[4].click()
+        temp_path = self._add_temp_input(window)
+        window._start_run()
+        self._flush_events()
         self.assertEqual(fake_manager.calls, [])
 
         notification_check.setChecked(True)
         self.assertTrue(fake_manager.enabled)
-        window.workflow_stage_actions[4].click()
+        window._start_run()
+        self._flush_events()
 
         self.assertEqual(
             fake_manager.calls,
             [("Run complete", "Run finished. You're ready for the next step.")],
         )
+        os.unlink(temp_path)
 
     def test_notification_manager_disabled_by_default(self) -> None:
         from app.ui import MainWindow
@@ -69,8 +87,11 @@ class TestCompletionNotifications(unittest.TestCase):
         self.assertFalse(notification_check.isChecked())
         self.assertFalse(fake_manager.enabled)
 
-        window.workflow_stage_actions[4].click()
+        temp_path = self._add_temp_input(window)
+        window._start_run()
+        self._flush_events()
         self.assertEqual(fake_manager.calls, [])
+        os.unlink(temp_path)
 
     def test_export_completion_notification(self) -> None:
         from app.ui import MainWindow
@@ -80,7 +101,8 @@ class TestCompletionNotifications(unittest.TestCase):
         notification_check = window.advanced_options_panel.completion_notification_check
         notification_check.setChecked(True)
 
-        window.workflow_stage_actions[5].click()
+        window._handle_export_stage()
+        self._flush_events()
         self.assertEqual(
             fake_manager.calls,
             [("Export complete", "Export finished. You're ready for the next step.")],

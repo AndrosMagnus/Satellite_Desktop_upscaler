@@ -1478,6 +1478,9 @@ class ChangelogPanel(QtWidgets.QGroupBox):
 
 
 class MainWindow(QtWidgets.QMainWindow):
+    run_completed = QtCore.Signal()
+    export_completed = QtCore.Signal()
+
     def __init__(
         self, notification_manager: "DesktopNotificationManager | None" = None
     ) -> None:
@@ -1707,24 +1710,23 @@ class MainWindow(QtWidgets.QMainWindow):
         self.notification_manager.set_enabled(enabled)
 
     def _wire_workflow_completion_notifications(self) -> None:
-        completion_targets = {
-            4: "Run",
-            5: "Export",
-        }
-        for index, stage_name in completion_targets.items():
-            if index >= len(self.workflow_stage_actions):
-                continue
-            button = self.workflow_stage_actions[index]
-            button.clicked.connect(
-                lambda _checked=False, name=stage_name: self._notify_workflow_completion(
-                    name
-                )
-            )
+        self.run_completed.connect(
+            lambda: self._notify_workflow_completion("Run")
+        )
+        self.export_completed.connect(
+            lambda: self._notify_workflow_completion("Export")
+        )
 
     def _notify_workflow_completion(self, stage_name: str) -> None:
         title = f"{stage_name} complete"
         message = f"{stage_name} finished. You're ready for the next step."
         self.notification_manager.notify(title, message, parent=self)
+
+    def _schedule_run_completion(self) -> None:
+        QtCore.QTimer.singleShot(0, self.run_completed.emit)
+
+    def _schedule_export_completion(self) -> None:
+        QtCore.QTimer.singleShot(0, self.export_completed.emit)
 
     def _wire_run_action(self) -> None:
         if "Run" not in self.workflow_stage_names:
@@ -1818,6 +1820,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._set_workflow_message(
             "Export: confirm the preset and output format before saving outputs."
         )
+        self._schedule_export_completion()
 
     def _handle_run_clicked(self) -> None:
         try:
@@ -1854,6 +1857,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 error_code="IO-001",
                 can_retry=True,
             )
+        self._schedule_run_completion()
 
     def _selected_input_paths(self) -> list[str]:
         paths = [item.text() for item in self.input_list.selectedItems()]
