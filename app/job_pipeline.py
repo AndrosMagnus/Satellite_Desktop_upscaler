@@ -1,10 +1,31 @@
 from __future__ import annotations
 
 import shutil
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
+from app.band_handling import ExportSettings
 from app.job_runner import Job, JobCancellationToken, JobProgress, JobResult, JobRunner
+from app.processing_report import (
+    ProcessingTimings,
+    build_processing_report,
+    export_processing_report,
+)
+
+
+@dataclass(frozen=True)
+class ProcessingReportConfig:
+    export_settings: ExportSettings
+    model_name: str
+    report_path: Path
+    scale: int | None = None
+    tiling: str | None = None
+    precision: str | None = None
+    compute: str | None = None
+    model_version: str | None = None
+    registry_path: Path | None = None
 
 
 class OutputTracker:
@@ -48,12 +69,18 @@ class JobPipeline:
         total_units: int,
         output_dir: Path,
         work: Callable[[int, OutputTracker], None],
+        report_config: ProcessingReportConfig | None = None,
+        report_clock: Callable[[], datetime] | None = None,
         cancel_token: JobCancellationToken | None = None,
         on_progress: Callable[[JobProgress], None] | None = None,
         on_cancel: Callable[[], None] | None = None,
     ) -> JobResult:
         tracker = OutputTracker(output_dir)
         token = cancel_token or JobCancellationToken()
+        started_at: datetime | None = None
+        clock = report_clock or (lambda: datetime.now(timezone.utc))
+        if report_config is not None:
+            started_at = clock()
 
         def unit_work(unit_index: int) -> None:
             work(unit_index, tracker)
@@ -70,4 +97,22 @@ class JobPipeline:
             cancel_token=token,
             on_cancel=handle_cancel,
         )
-        return self._runner.run(job, on_progress=on_progress)
+        result = self._runner.run(job, on_progress=on_progress)
+        if report_config is not None:
+            completed_at = clock()
+            timings = ProcessingTimings.from_datetimes(
+                started_at or completed_at, completed_at
+            )
+            report = build_processing_report(
+                export_settings=report_config.export_settings,
+                model_name=report_config.model_name,
+                timings=timings,
+                scale=report_config.scale,
+                tiling=report_config.tiling,
+                precision=report_config.precision,
+                compute=report_config.compute,
+                model_version=report_config.model_version,
+                registry_path=report_config.registry_path,
+            )
+            export_processing_report(report, report_config.report_path)
+        return result
