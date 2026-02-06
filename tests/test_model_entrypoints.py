@@ -29,8 +29,14 @@ class TestModelEntrypoints(unittest.TestCase):
         path = Path(entrypoint)
         self.assertTrue(path.is_file(), "SRGAN adapted to EO entrypoint must exist on disk")
 
+    def test_swinir_entrypoint_resolves(self) -> None:
+        entrypoint = resolve_model_entrypoint("SwinIR")
+        self.assertIsNotNone(entrypoint, "SwinIR entrypoint must be registered")
+        path = Path(entrypoint)
+        self.assertTrue(path.is_file(), "SwinIR entrypoint must exist on disk")
+
     def test_s2_entrypoints_resolve(self) -> None:
-        for model_name in ("S2DR3", "SEN2SR"):
+        for model_name in ("S2DR3", "SEN2SR", "LDSR-S2"):
             entrypoint = resolve_model_entrypoint(model_name)
             self.assertIsNotNone(entrypoint, f"{model_name} entrypoint must be registered")
             path = Path(entrypoint)
@@ -70,19 +76,34 @@ class TestModelEntrypoints(unittest.TestCase):
             self.assertEqual(wrapper.version, "v1")
             self.assertTrue(Path(wrapper.entrypoint).is_file())
 
-    def test_build_s2_wrapper_uses_entrypoint(self) -> None:
+    def test_build_swinir_wrapper_uses_entrypoint(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             base_dir = Path(tmpdir)
-            paths = resolve_install_paths("S2DR3", "v1", base_dir=base_dir)
+            paths = resolve_install_paths("SwinIR", "v1", base_dir=base_dir)
             paths.root.mkdir(parents=True, exist_ok=True)
             paths.manifest.write_text("{}", encoding="utf-8")
             paths.weights.write_bytes(b"weights")
             self._create_venv(paths.venv)
 
-            wrapper = build_model_wrapper("S2DR3", "v1", base_dir=base_dir)
-            self.assertEqual(wrapper.name, "S2DR3")
+            wrapper = build_model_wrapper("SwinIR", "v1", base_dir=base_dir)
+            self.assertEqual(wrapper.name, "SwinIR")
             self.assertEqual(wrapper.version, "v1")
             self.assertTrue(Path(wrapper.entrypoint).is_file())
+
+    def test_build_s2_wrapper_uses_entrypoint(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base_dir = Path(tmpdir)
+            for model_name in ("S2DR3", "LDSR-S2"):
+                paths = resolve_install_paths(model_name, "v1", base_dir=base_dir)
+                paths.root.mkdir(parents=True, exist_ok=True)
+                paths.manifest.write_text("{}", encoding="utf-8")
+                paths.weights.write_bytes(b"weights")
+                self._create_venv(paths.venv)
+
+                wrapper = build_model_wrapper(model_name, "v1", base_dir=base_dir)
+                self.assertEqual(wrapper.name, model_name)
+                self.assertEqual(wrapper.version, "v1")
+                self.assertTrue(Path(wrapper.entrypoint).is_file())
 
     def test_build_mrdam_wrapper_uses_entrypoint(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

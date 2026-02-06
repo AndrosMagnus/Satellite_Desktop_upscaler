@@ -9,11 +9,15 @@ _ENTRYPOINTS: dict[str, str] = {
     "SatelliteSR": str(
         Path(__file__).resolve().parent / "model_wrappers" / "satellitesr_wrapper.py"
     ),
+    "SwinIR": str(Path(__file__).resolve().parent / "model_wrappers" / "swinir_wrapper.py"),
     "SRGAN adapted to EO": str(
         Path(__file__).resolve().parent / "model_wrappers" / "srgan_eo_wrapper.py"
     ),
     "S2DR3": str(Path(__file__).resolve().parent / "model_wrappers" / "s2_sr_wrapper.py"),
     "SEN2SR": str(
+        Path(__file__).resolve().parent / "model_wrappers" / "s2_sr_wrapper.py"
+    ),
+    "LDSR-S2": str(
         Path(__file__).resolve().parent / "model_wrappers" / "s2_sr_wrapper.py"
     ),
     "MRDAM": str(Path(__file__).resolve().parent / "model_wrappers" / "mrdam_wrapper.py"),
