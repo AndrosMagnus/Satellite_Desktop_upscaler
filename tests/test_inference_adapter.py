@@ -2,6 +2,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from app.inference_adapter import InferenceAdapter, InferenceRequest
 from app.model_wrapper import ModelWrapper
@@ -108,6 +109,36 @@ class TestInferenceAdapter(unittest.TestCase):
             self.assertIn("EXTRA_ENV", env)
             self.assertEqual(env["EXTRA_ENV"], "2")
             self.assertTrue(output_path.parent.exists())
+
+    def test_run_falls_back_to_cpu_when_gpu_unavailable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base_dir = Path(tmpdir)
+            wrapper = self._create_wrapper(base_dir)
+            input_path = base_dir / "input.tif"
+            input_path.write_text("", encoding="utf-8")
+            output_path = base_dir / "outputs" / "out.tif"
+
+            captured: dict[str, object] = {}
+
+            def runner(cmd: list[str], env: dict[str, str] | None) -> None:
+                captured["cmd"] = cmd
+                captured["env"] = env
+
+            adapter = InferenceAdapter(runner=runner)
+            request = InferenceRequest(
+                input_path=input_path,
+                output_path=output_path,
+                compute="GPU",
+            )
+
+            with mock.patch("app.inference_adapter._gpu_available", return_value=False):
+                adapter.run(wrapper, request)
+
+            cmd = captured.get("cmd")
+            self.assertIsInstance(cmd, list)
+            self.assertIn("--compute", cmd)
+            compute_index = cmd.index("--compute") + 1
+            self.assertEqual(cmd[compute_index], "CPU")
 
 
 if __name__ == "__main__":

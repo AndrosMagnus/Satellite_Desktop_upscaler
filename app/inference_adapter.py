@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable
 
@@ -89,7 +91,13 @@ class InferenceAdapter:
 
         request.output_path.parent.mkdir(parents=True, exist_ok=True)
         env = _merge_env(wrapper.extra_env, extra_env)
-        cmd = self.build_command(wrapper, request)
+        effective_compute = _cpu_fallback_compute(request.compute, env or os.environ)
+        effective_request = (
+            request
+            if effective_compute == request.compute
+            else replace(request, compute=effective_compute)
+        )
+        cmd = self.build_command(wrapper, effective_request)
         try:
             self._runner(cmd, env)
         except subprocess.CalledProcessError as exc:
@@ -124,3 +132,55 @@ def _merge_env(
 
 def _is_script_entrypoint(entrypoint: str) -> bool:
     return entrypoint.endswith(".py") or "/" in entrypoint or "\\" in entrypoint
+
+
+def _cpu_fallback_compute(
+    compute: str | None,
+    env: Mapping[str, str],
+) -> str | None:
+    normalized = _normalize_compute(compute)
+    if normalized == "cpu":
+        return compute
+    if normalized in (None, "auto", "gpu", "cuda") and not _gpu_available(env):
+        return "CPU"
+    return compute
+
+
+def _normalize_compute(value: str | None) -> str | None:
+    if value is None:
+        return None
+    stripped = value.strip()
+    if not stripped:
+        return None
+    return stripped.lower()
+
+
+def _gpu_available(env: Mapping[str, str]) -> bool:
+    if _cuda_disabled_by_env(env):
+        return False
+    if shutil.which("nvidia-smi") is None:
+        return False
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=dict(env),
+        )
+    except OSError:
+        return False
+    if result.returncode != 0:
+        return False
+    return any(line.strip() for line in result.stdout.splitlines())
+
+
+def _cuda_disabled_by_env(env: Mapping[str, str]) -> bool:
+    for key in ("CUDA_VISIBLE_DEVICES", "NVIDIA_VISIBLE_DEVICES"):
+        value = env.get(key)
+        if value is None:
+            continue
+        normalized = value.strip().lower()
+        if normalized in {"", "-1", "none", "null", "void"}:
+            return True
+    return False
