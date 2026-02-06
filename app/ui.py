@@ -916,6 +916,7 @@ class AdvancedOptionsPanel(CollapsiblePanel):
             self.precision_combo,
             self.compute_combo,
             self.seam_blend_check,
+            self.completion_notification_check,
         ]
 
         if enabled:
@@ -1937,13 +1938,15 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _restore_session_if_needed(self) -> None:
         state = self._session_store.load()
-        if not state.dirty or not state.paths:
+        if not state.dirty:
             return
         self._restoring_session = True
         try:
-            self.input_list.add_paths(state.paths)
-            if state.selected_paths:
-                self._select_session_paths(state.selected_paths)
+            self._apply_session_preferences(state)
+            if state.paths:
+                self.input_list.add_paths(state.paths)
+                if state.selected_paths:
+                    self._select_session_paths(state.selected_paths)
         finally:
             self._restoring_session = False
 
@@ -1982,10 +1985,27 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         if dirty is None:
             dirty = self._session_dirty
+        preset_item = self.export_presets_panel.preset_list.currentItem()
+        preset_name = preset_item.text() if preset_item is not None else None
+        comparison_panel = self.model_comparison_panel
+        advanced_panel = self.advanced_options_panel
         state = SessionState(
             dirty=dirty,
             paths=self._current_input_paths(),
             selected_paths=self._current_selected_paths(),
+            export_preset=preset_name,
+            band_handling=self.export_presets_panel.band_handling_combo.currentText(),
+            output_format=self.export_presets_panel.output_format_combo.currentText(),
+            comparison_mode=comparison_panel.is_comparison_mode(),
+            comparison_model_a=comparison_panel.selected_model_a(),
+            comparison_model_b=comparison_panel.selected_model_b(),
+            advanced_scale=advanced_panel.scale_combo.currentText(),
+            advanced_tiling=advanced_panel.tiling_combo.currentText(),
+            advanced_precision=advanced_panel.precision_combo.currentText(),
+            advanced_compute=advanced_panel.compute_combo.currentText(),
+            advanced_seam_blend=advanced_panel.seam_blend_check.isChecked(),
+            advanced_safe_mode=advanced_panel.safe_mode_check.isChecked(),
+            advanced_notifications=advanced_panel.completion_notification_check.isChecked(),
         )
         self._session_dirty = state.dirty
         self._session_store.save(state)
@@ -2001,6 +2021,50 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _autosave_session_state(self) -> None:
         self._persist_session_state()
+
+    def _apply_session_preferences(self, state: SessionState) -> None:
+        if state.comparison_mode:
+            self.model_comparison_panel.mode_combo.setCurrentText("Model comparison")
+        else:
+            self.model_comparison_panel.mode_combo.setCurrentText("Standard")
+
+        if state.comparison_model_a:
+            combo = self.model_comparison_panel.model_a_combo
+            if combo.findText(state.comparison_model_a) >= 0:
+                combo.setCurrentText(state.comparison_model_a)
+        if state.comparison_model_b:
+            combo = self.model_comparison_panel.model_b_combo
+            if combo.findText(state.comparison_model_b) >= 0:
+                combo.setCurrentText(state.comparison_model_b)
+
+        if state.export_preset:
+            self.export_presets_panel.select_preset(state.export_preset)
+        if state.band_handling:
+            self.export_presets_panel.set_band_handling(state.band_handling)
+        if state.output_format:
+            output_combo = self.export_presets_panel.output_format_combo
+            if output_combo.findText(state.output_format) >= 0:
+                output_combo.setCurrentText(state.output_format)
+
+        advanced_panel = self.advanced_options_panel
+        advanced_panel.safe_mode_check.setChecked(state.advanced_safe_mode)
+        if not state.advanced_safe_mode:
+            if state.advanced_scale:
+                if advanced_panel.scale_combo.findText(state.advanced_scale) >= 0:
+                    advanced_panel.scale_combo.setCurrentText(state.advanced_scale)
+            if state.advanced_tiling:
+                if advanced_panel.tiling_combo.findText(state.advanced_tiling) >= 0:
+                    advanced_panel.tiling_combo.setCurrentText(state.advanced_tiling)
+            if state.advanced_precision:
+                if advanced_panel.precision_combo.findText(state.advanced_precision) >= 0:
+                    advanced_panel.precision_combo.setCurrentText(state.advanced_precision)
+            if state.advanced_compute:
+                if advanced_panel.compute_combo.findText(state.advanced_compute) >= 0:
+                    advanced_panel.compute_combo.setCurrentText(state.advanced_compute)
+            advanced_panel.seam_blend_check.setChecked(state.advanced_seam_blend)
+        advanced_panel.completion_notification_check.setChecked(
+            state.advanced_notifications
+        )
 
     def _update_comparison_state(self) -> None:
         before_label, after_label = self.model_comparison_panel.comparison_labels()

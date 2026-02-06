@@ -99,6 +99,65 @@ class TestSessionRecovery(unittest.TestCase):
             self.assertEqual(payload["paths"], ["/tmp/autosave_input.tif"])
             self.assertTrue(payload["dirty"])
 
+    def test_restores_preferences_from_dirty_session(self) -> None:
+        from app.ui import MainWindow
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            session_path = os.path.join(tmpdir, "session.json")
+            self._set_session_env(session_path)
+            payload = {
+                "dirty": True,
+                "paths": ["/tmp/input_a.tif"],
+                "selected_paths": ["/tmp/input_a.tif"],
+                "export_preset": "Landsat",
+                "band_handling": "All bands",
+                "output_format": "PNG",
+                "comparison_mode": True,
+                "comparison_model_a": "Satlas",
+                "comparison_model_b": "SwinIR",
+                "advanced_scale": "8x",
+                "advanced_tiling": "1024 px",
+                "advanced_precision": "FP32",
+                "advanced_compute": "CPU",
+                "advanced_seam_blend": True,
+                "advanced_safe_mode": False,
+                "advanced_notifications": True,
+            }
+            with open(session_path, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle)
+
+            window = MainWindow()
+            self.addCleanup(window.close)
+
+            preset_item = window.export_presets_panel.preset_list.currentItem()
+            self.assertIsNotNone(preset_item)
+            self.assertEqual(preset_item.text(), "Landsat")
+            self.assertEqual(
+                window.export_presets_panel.band_handling_combo.currentText(),
+                "All bands",
+            )
+            self.assertEqual(
+                window.export_presets_panel.output_format_combo.currentText(),
+                "PNG",
+            )
+
+            comparison_panel = window.model_comparison_panel
+            self.assertEqual(
+                comparison_panel.mode_combo.currentText(),
+                "Model comparison",
+            )
+            self.assertEqual(comparison_panel.model_a_combo.currentText(), "Satlas")
+            self.assertEqual(comparison_panel.model_b_combo.currentText(), "SwinIR")
+
+            advanced_panel = window.advanced_options_panel
+            self.assertFalse(advanced_panel.safe_mode_check.isChecked())
+            self.assertEqual(advanced_panel.scale_combo.currentText(), "8x")
+            self.assertEqual(advanced_panel.tiling_combo.currentText(), "1024 px")
+            self.assertEqual(advanced_panel.precision_combo.currentText(), "FP32")
+            self.assertEqual(advanced_panel.compute_combo.currentText(), "CPU")
+            self.assertTrue(advanced_panel.seam_blend_check.isChecked())
+            self.assertTrue(advanced_panel.completion_notification_check.isChecked())
+
 
 if __name__ == "__main__":
     unittest.main()
