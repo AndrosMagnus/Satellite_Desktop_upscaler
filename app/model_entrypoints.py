@@ -16,6 +16,7 @@ _ENTRYPOINTS: dict[str, str] = {
     "SEN2SR": str(
         Path(__file__).resolve().parent / "model_wrappers" / "s2_sr_wrapper.py"
     ),
+    "MRDAM": str(Path(__file__).resolve().parent / "model_wrappers" / "mrdam_wrapper.py"),
 }
 
 
