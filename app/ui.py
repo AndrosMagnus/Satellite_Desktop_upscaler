@@ -2107,8 +2107,6 @@ class MainWindow(QtWidgets.QMainWindow):
         from app.provider_detection import recommend_provider
 
         recommendation = recommend_provider(path)
-        if recommendation.ambiguous:
-            return self._prompt_for_provider_selection(recommendation.candidates)
         return recommendation.best
 
     def _prompt_for_provider_selection(

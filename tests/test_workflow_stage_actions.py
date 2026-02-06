@@ -73,6 +73,28 @@ class TestWorkflowStageActions(unittest.TestCase):
             "Recommend: suggested preset 'Landsat' ready.",
         )
 
+    def test_recommend_stage_handles_ambiguity(self) -> None:
+        from app.ui import MainWindow
+
+        window = MainWindow()
+        window.export_presets_panel.recommended_combo.setCurrentText("PlanetScope")
+        window.input_list.add_paths(["/tmp/sentinel_landsat_s2a_lc08_scene.tif"])
+        window.input_list.clearSelection()
+        window.input_list.item(0).setSelected(True)
+        QtWidgets.QApplication.processEvents()
+
+        window.workflow_stage_actions[3].click()
+        QtWidgets.QApplication.processEvents()
+
+        self.assertEqual(
+            window.export_presets_panel.recommended_combo.currentText(),
+            "PlanetScope",
+        )
+        message = window.status_bar.currentMessage()
+        self.assertIn("Recommend: multiple providers match", message)
+        self.assertIn("Landsat", message)
+        self.assertIn("Sentinel-2", message)
+
     def test_export_stage_sets_message(self) -> None:
         from app.ui import MainWindow
 
