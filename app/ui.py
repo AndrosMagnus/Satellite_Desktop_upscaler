@@ -1777,9 +1777,13 @@ class MainWindow(QtWidgets.QMainWindow):
             self._set_workflow_message(message)
             return
         suggestion = suggest_mosaic(selected_paths)
+        preview_metadata = self._preview_stitch_metadata(selected_paths)
+        if preview_metadata:
+            self._set_metadata_placeholders()
+            self._set_metadata(preview_metadata)
         if suggestion.message:
             message = f"Stitch: {suggestion.message}"
-        elif preview_stitch_bounds(selected_paths) is not None:
+        elif preview_metadata:
             message = "Stitch: stitch bounds previewed in metadata."
         else:
             message = "Stitch: no mosaic hints detected in selected tiles."
@@ -2026,10 +2030,7 @@ class MainWindow(QtWidgets.QMainWindow):
             elif len(items) > 1:
                 paths = [item.text() for item in items]
                 mosaic_hint = suggest_mosaic(paths)
-                preview = preview_stitch_bounds(paths)
-                if preview is not None:
-                    preview_metadata["Stitch extent"] = preview.extent
-                    preview_metadata["Tile boundaries"] = preview.boundaries
+                preview_metadata = self._preview_stitch_metadata(paths)
                 if self.model_comparison_panel.is_comparison_mode():
                     message = "Model comparison requires a single image."
                     if mosaic_hint.message:
@@ -2150,6 +2151,15 @@ class MainWindow(QtWidgets.QMainWindow):
         if image.isNull():
             return None
         return image
+
+    def _preview_stitch_metadata(self, paths: list[str]) -> dict[str, str]:
+        preview = preview_stitch_bounds(paths)
+        if preview is None:
+            return {}
+        return {
+            "Stitch extent": preview.extent,
+            "Tile boundaries": preview.boundaries,
+        }
 
     def _build_metadata(self, path: str) -> dict[str, str]:
         info = QtCore.QFileInfo(path)

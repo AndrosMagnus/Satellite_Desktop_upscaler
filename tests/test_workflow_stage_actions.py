@@ -4,7 +4,7 @@ from unittest import mock
 
 
 try:
-    from PySide6 import QtWidgets
+    from PySide6 import QtCore, QtWidgets
 
     PYSIDE_AVAILABLE = True
 except ImportError:
@@ -51,6 +51,36 @@ class TestWorkflowStageActions(unittest.TestCase):
         self.assertEqual(
             window.status_bar.currentMessage(),
             "Stitch: select at least two tiles to preview mosaic bounds.",
+        )
+
+    def test_stitch_stage_populates_preview_metadata(self) -> None:
+        from app.ui import MainWindow
+
+        window = MainWindow()
+        window.input_list.add_paths(
+            [
+                "/tmp/scene_r0_c0.tif",
+                "/tmp/scene_r0_c1.tif",
+            ]
+        )
+        with QtCore.QSignalBlocker(window.input_list):
+            window.input_list.setCurrentRow(
+                0, QtCore.QItemSelectionModel.SelectionFlag.Select
+            )
+            window.input_list.setCurrentRow(
+                1, QtCore.QItemSelectionModel.SelectionFlag.Select
+            )
+
+        window.workflow_stage_actions[2].click()
+        QtWidgets.QApplication.processEvents()
+
+        self.assertEqual(
+            window.metadata_value_labels["Stitch extent"].text(),
+            "rows=0..0, cols=0..1 (1 x 2 tiles)",
+        )
+        self.assertEqual(
+            window.metadata_value_labels["Tile boundaries"].text(),
+            "rows=0, 1; cols=0, 1, 2",
         )
 
     def test_recommend_stage_updates_preset(self) -> None:
