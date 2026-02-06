@@ -61,6 +61,32 @@ class TestPreviewAndMetadata(unittest.TestCase):
             self.assertEqual(window.metadata_value_labels["Dimensions"].text(), "Unknown")
             self.assertIn("notes.txt", window.metadata_summary.text())
 
+    def test_header_only_image_still_reports_metadata(self) -> None:
+        from app.ui import MainWindow
+
+        window = MainWindow()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            header_path = os.path.join(tmpdir, "header_only.png")
+            width, height = 10, 6
+            png_header = (
+                b"\x89PNG\r\n\x1a\n"
+                b"\x00\x00\x00\x0d"
+                b"IHDR"
+                + width.to_bytes(4, "big")
+                + height.to_bytes(4, "big")
+                + b"\x08\x02\x00\x00\x00"
+                + b"\x00\x00\x00\x00"
+            )
+            with open(header_path, "wb") as handle:
+                handle.write(png_header)
+
+            window.input_list.add_paths([header_path])
+            window.input_list.setCurrentRow(0)
+            QtWidgets.QApplication.processEvents()
+
+            self.assertEqual(window.metadata_value_labels["Format"].text(), "PNG")
+            self.assertEqual(window.metadata_value_labels["Dimensions"].text(), "10 x 6 px")
+
 
 if __name__ == "__main__":
     unittest.main()
