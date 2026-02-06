@@ -13,7 +13,11 @@ from app.band_handling import BandHandling, ExportSettings
 from app.error_handling import UserFacingError, as_user_facing_error
 from app.mosaic_detection import preview_stitch_bounds, suggest_mosaic
 from app.metadata import extract_image_header_info
-from app.model_installation import ModelInstaller, resolve_model_cache_dir
+from app.model_installation import (
+    ModelInstaller,
+    resolve_model_cache_dir,
+    run_missing_health_checks,
+)
 from app.output_metadata import metadata_loss_warning
 from app.run_settings import (
     RunSettings,
@@ -604,6 +608,9 @@ class ModelManagerPanel(QtWidgets.QGroupBox):
             bundled = bool(entry.get("bundled"))
             license_acceptance_required = bool(entry.get("license_acceptance_required"))
             checksum = str(entry.get("checksum", ""))
+            dependencies = entry.get("dependencies", [])
+            if not isinstance(dependencies, list):
+                dependencies = []
             version = _extract_model_version(weights_url)
             versions = ["Latest"]
             if version and version not in versions:
@@ -622,6 +629,7 @@ class ModelManagerPanel(QtWidgets.QGroupBox):
                     "versions": versions,
                     "weights_url": weights_url,
                     "checksum": checksum,
+                    "dependencies": dependencies,
                     "license_acceptance_required": license_acceptance_required,
                 }
             )
@@ -767,6 +775,7 @@ class ModelManagerPanel(QtWidgets.QGroupBox):
                     str(model.get("version", "Latest")),
                     str(model.get("weights_url", "")),
                     checksum=str(model.get("checksum", "")),
+                    dependencies=tuple(model.get("dependencies", []) or []),
                 )
                 final_installed = True
             except Exception as exc:  # noqa: BLE001
@@ -1506,6 +1515,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._restore_session_if_needed()
         self._mark_session_active()
         self._configure_session_autosave()
+        self._schedule_model_health_checks()
 
     def _build_ui(self) -> None:
         splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
@@ -2021,6 +2031,15 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _autosave_session_state(self) -> None:
         self._persist_session_state()
+
+    def _schedule_model_health_checks(self) -> None:
+        QtCore.QTimer.singleShot(0, self._run_model_health_checks)
+
+    def _run_model_health_checks(self) -> None:
+        try:
+            run_missing_health_checks()
+        except Exception:  # noqa: BLE001
+            return
 
     def _apply_session_preferences(self, state: SessionState) -> None:
         if state.comparison_mode:
