@@ -18,11 +18,16 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Validate EO dataset samples with PSNR/SSIM and generate previews."
     )
-    parser.add_argument(
+    manifest_group = parser.add_mutually_exclusive_group(required=True)
+    manifest_group.add_argument(
         "--manifest",
-        required=True,
         type=Path,
         help="Path to JSON manifest listing reference/prediction pairs.",
+    )
+    manifest_group.add_argument(
+        "--sample",
+        action="store_true",
+        help="Use the bundled sample EO dataset manifest.",
     )
     parser.add_argument(
         "--output",
@@ -57,9 +62,16 @@ def _parse_bands(value: str | None) -> list[int] | None:
     return [int(part) for part in parts]
 
 
+def _sample_manifest_path() -> Path:
+    return Path(__file__).resolve().parent / "sample_data" / "eo_sample" / "manifest.json"
+
+
 def main() -> int:
     args = _parse_args()
-    samples = load_samples_from_manifest(args.manifest)
+    manifest_path = _sample_manifest_path() if args.sample else args.manifest
+    if manifest_path is None:
+        raise ValueError("Manifest path was not provided.")
+    samples = load_samples_from_manifest(manifest_path)
     report = evaluate_dataset(samples, data_range=args.data_range)
     output_dir = args.output
     output_dir.mkdir(parents=True, exist_ok=True)
