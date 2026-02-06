@@ -576,7 +576,8 @@ class ModelManagerPanel(QtWidgets.QGroupBox):
         self.uninstall_button = uninstall_button
         self._installer = ModelInstaller()
         self._install_actions_enabled = (
-            os.environ.get("SATELLITE_UPSCALE_DISABLE_INSTALL") != "1"
+            os.environ.get("SATELLITE_UPSCALE_ENABLE_INSTALL") == "1"
+            and os.environ.get("SATELLITE_UPSCALE_DISABLE_INSTALL") != "1"
         )
         self._model_cache_dir = resolve_model_cache_dir()
         self.models = self._load_model_registry()
@@ -737,6 +738,10 @@ class ModelManagerPanel(QtWidgets.QGroupBox):
         model["updating"] = True
         self._refresh_row_for_model(model)
         if not self._install_actions_enabled:
+            QtCore.QTimer.singleShot(
+                self._STATUS_UPDATE_DELAY_MS,
+                lambda: self._complete_status_update(model, target_installed),
+            )
             return
         QtCore.QTimer.singleShot(
             self._STATUS_UPDATE_DELAY_MS,

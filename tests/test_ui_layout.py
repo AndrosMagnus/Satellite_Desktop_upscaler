@@ -147,6 +147,53 @@ class TestPrimaryLayout(unittest.TestCase):
         self.assertIsNotNone(status_item)
         self.assertEqual(status_item.text(), "Available")
 
+    def test_model_manager_simulated_installs_complete(self) -> None:
+        from app.ui import MainWindow
+
+        original_enable = os.environ.get("SATELLITE_UPSCALE_ENABLE_INSTALL")
+        original_disable = os.environ.get("SATELLITE_UPSCALE_DISABLE_INSTALL")
+        os.environ["SATELLITE_UPSCALE_ENABLE_INSTALL"] = "0"
+        if "SATELLITE_UPSCALE_DISABLE_INSTALL" in os.environ:
+            del os.environ["SATELLITE_UPSCALE_DISABLE_INSTALL"]
+        try:
+            window = MainWindow()
+            panel = window.model_manager_panel
+            panel._STATUS_UPDATE_DELAY_MS = 1
+
+            available_row = None
+            for row in range(panel.model_table.rowCount()):
+                item = panel.model_table.item(row, 0)
+                if item and item.text() == "SwinIR":
+                    available_row = row
+                    break
+            self.assertIsNotNone(available_row, "SwinIR must be listed in the model table")
+
+            panel.model_table.selectRow(available_row)
+            QtWidgets.QApplication.processEvents()
+
+            panel.install_button.click()
+            QtWidgets.QApplication.processEvents()
+            status_item = panel.model_table.item(available_row, 2)
+            self.assertIsNotNone(status_item)
+            self.assertEqual(status_item.text(), "Updating")
+
+            loop = QtCore.QEventLoop()
+            QtCore.QTimer.singleShot(50, loop.quit)
+            loop.exec()
+
+            status_item = panel.model_table.item(available_row, 2)
+            self.assertIsNotNone(status_item)
+            self.assertEqual(status_item.text(), "Installed")
+        finally:
+            if original_enable is None:
+                os.environ.pop("SATELLITE_UPSCALE_ENABLE_INSTALL", None)
+            else:
+                os.environ["SATELLITE_UPSCALE_ENABLE_INSTALL"] = original_enable
+            if original_disable is None:
+                os.environ.pop("SATELLITE_UPSCALE_DISABLE_INSTALL", None)
+            else:
+                os.environ["SATELLITE_UPSCALE_DISABLE_INSTALL"] = original_disable
+
     def test_model_comparison_panel(self) -> None:
         from app.ui import MainWindow, ModelComparisonPanel
 
