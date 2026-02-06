@@ -397,6 +397,23 @@ class TestPrimaryLayout(unittest.TestCase):
         self.assertGreater(panel.app_list.count(), 0)
         self.assertGreater(panel.model_list.count(), 0)
 
+        first_app_entry = panel.app_list.item(0).data(QtCore.Qt.ItemDataRole.UserRole)
+        self.assertEqual(
+            panel.app_details.text(),
+            f"{first_app_entry['date']} — {first_app_entry['details']}",
+        )
+        panel.app_list.setCurrentRow(1)
+        second_app_entry = panel.app_list.item(1).data(QtCore.Qt.ItemDataRole.UserRole)
+        self.assertEqual(
+            panel.app_details.text(),
+            f"{second_app_entry['date']} — {second_app_entry['details']}",
+        )
+        first_model_entry = panel.model_list.item(0).data(QtCore.Qt.ItemDataRole.UserRole)
+        self.assertEqual(
+            panel.model_details.text(),
+            f"{first_model_entry['date']} — {first_model_entry['details']}",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
