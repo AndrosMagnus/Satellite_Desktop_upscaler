@@ -81,6 +81,34 @@
     ]
   },
   {
+    "name": "Swin2SR",
+    "source_url": "https://github.com/mv-lab/swin2sr",
+    "license": "UNVERIFIED",
+    "gpu_required": false,
+    "cpu_supported": true,
+    "bands_supported": [
+      "RGB"
+    ],
+    "scales": [
+      2,
+      4
+    ],
+    "weights_url": "models/weights/swin2sr_dummy.bin",
+    "checksum": "sha256:17a53aae5fa9cfec6e546eabe897207b77cff9034047f729e247630e9e8b764b",
+    "default_options": {
+      "scale": 4,
+      "tiling": "auto",
+      "precision": "auto"
+    },
+    "dependencies": [
+      "torch==2.1.2",
+      "torchvision==0.16.2",
+      "numpy==1.26.4",
+      "opencv-python==4.8.1.78",
+      "Pillow==10.2.0"
+    ]
+  },
+  {
     "name": "HAT",
     "source_url": "https://github.com/XPixelGroup/HAT",
     "license": "UNVERIFIED",

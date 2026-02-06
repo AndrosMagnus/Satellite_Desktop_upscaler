@@ -35,6 +35,12 @@ class TestModelEntrypoints(unittest.TestCase):
         path = Path(entrypoint)
         self.assertTrue(path.is_file(), "SwinIR entrypoint must exist on disk")
 
+    def test_swin2sr_entrypoint_resolves(self) -> None:
+        entrypoint = resolve_model_entrypoint("Swin2SR")
+        self.assertIsNotNone(entrypoint, "Swin2SR entrypoint must be registered")
+        path = Path(entrypoint)
+        self.assertTrue(path.is_file(), "Swin2SR entrypoint must exist on disk")
+
     def test_hat_entrypoint_resolves(self) -> None:
         entrypoint = resolve_model_entrypoint("HAT")
         self.assertIsNotNone(entrypoint, "HAT entrypoint must be registered")
@@ -93,6 +99,20 @@ class TestModelEntrypoints(unittest.TestCase):
 
             wrapper = build_model_wrapper("SwinIR", "v1", base_dir=base_dir)
             self.assertEqual(wrapper.name, "SwinIR")
+            self.assertEqual(wrapper.version, "v1")
+            self.assertTrue(Path(wrapper.entrypoint).is_file())
+
+    def test_build_swin2sr_wrapper_uses_entrypoint(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base_dir = Path(tmpdir)
+            paths = resolve_install_paths("Swin2SR", "v1", base_dir=base_dir)
+            paths.root.mkdir(parents=True, exist_ok=True)
+            paths.manifest.write_text("{}", encoding="utf-8")
+            paths.weights.write_bytes(b"weights")
+            self._create_venv(paths.venv)
+
+            wrapper = build_model_wrapper("Swin2SR", "v1", base_dir=base_dir)
+            self.assertEqual(wrapper.name, "Swin2SR")
             self.assertEqual(wrapper.version, "v1")
             self.assertTrue(Path(wrapper.entrypoint).is_file())
 
