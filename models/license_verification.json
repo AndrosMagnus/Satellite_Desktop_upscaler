@@ -1,0 +1,14 @@
+[
+  {
+    "name": "Real-ESRGAN",
+    "license": "BSD-3-Clause",
+    "source_url": "https://github.com/xinntao/Real-ESRGAN/blob/master/LICENSE",
+    "verified_at": "2026-02-06"
+  },
+  {
+    "name": "Satlas",
+    "license": "Apache-2.0",
+    "source_url": "https://github.com/allenai/satlas-super-resolution/blob/main/LICENSE.txt",
+    "verified_at": "2026-02-06"
+  }
+]
