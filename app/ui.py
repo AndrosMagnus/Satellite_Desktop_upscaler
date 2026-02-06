@@ -2147,6 +2147,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self._batch_mode = enabled
         self.export_presets_panel.set_batch_mode(enabled)
         self.model_comparison_panel.set_batch_mode(enabled)
+        if "Recommend" in self.workflow_stage_names:
+            recommend_index = self.workflow_stage_names.index("Recommend")
+            if recommend_index < len(self.workflow_stage_actions):
+                self.workflow_stage_actions[recommend_index].setEnabled(not enabled)
 
     def _load_preview_and_metadata(self, path: str) -> None:
         self._update_recommended_preset(path)

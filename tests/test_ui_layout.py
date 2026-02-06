@@ -255,11 +255,14 @@ class TestPrimaryLayout(unittest.TestCase):
         window.input_list.item(0).setSelected(True)
         window.input_list.item(1).setSelected(True)
         QtWidgets.QApplication.processEvents()
+        recommend_index = window.workflow_stage_names.index("Recommend")
+        recommend_button = window.workflow_stage_actions[recommend_index]
 
         self.assertFalse(window.export_presets_panel.recommended_combo.isEnabled())
         self.assertFalse(window.export_presets_panel.use_recommended_button.isEnabled())
         self.assertFalse(window.model_comparison_panel.mode_combo.isEnabled())
         self.assertEqual(window.model_comparison_panel.mode_combo.currentText(), "Standard")
+        self.assertFalse(recommend_button.isEnabled())
 
         window.input_list.clearSelection()
         window.input_list.item(0).setSelected(True)
@@ -268,6 +271,7 @@ class TestPrimaryLayout(unittest.TestCase):
         self.assertTrue(window.export_presets_panel.recommended_combo.isEnabled())
         self.assertTrue(window.export_presets_panel.use_recommended_button.isEnabled())
         self.assertTrue(window.model_comparison_panel.mode_combo.isEnabled())
+        self.assertTrue(recommend_button.isEnabled())
 
     def test_band_handling_selection(self) -> None:
         from app.band_handling import BandHandling
@@ -322,6 +326,7 @@ class TestPrimaryLayout(unittest.TestCase):
         panel.toggle_button.setChecked(True)
 
         self.assertFalse(panel.safe_mode_check.isChecked())
+        panel.completion_notification_check.setChecked(True)
         panel.safe_mode_check.setChecked(True)
         self.assertEqual(panel.compute_combo.currentText(), "CPU")
         self.assertEqual(panel.precision_combo.currentText(), "FP32")
@@ -333,6 +338,8 @@ class TestPrimaryLayout(unittest.TestCase):
         self.assertFalse(panel.scale_combo.isEnabled())
         self.assertFalse(panel.tiling_combo.isEnabled())
         self.assertFalse(panel.seam_blend_check.isEnabled())
+        self.assertFalse(panel.completion_notification_check.isEnabled())
+        self.assertTrue(panel.completion_notification_check.isChecked())
 
         panel.safe_mode_check.setChecked(False)
         self.assertTrue(panel.compute_combo.isEnabled())
@@ -340,6 +347,8 @@ class TestPrimaryLayout(unittest.TestCase):
         self.assertTrue(panel.scale_combo.isEnabled())
         self.assertTrue(panel.tiling_combo.isEnabled())
         self.assertTrue(panel.seam_blend_check.isEnabled())
+        self.assertTrue(panel.completion_notification_check.isEnabled())
+        self.assertTrue(panel.completion_notification_check.isChecked())
 
     def test_run_settings_capture_compute_override(self) -> None:
         from app.ui import MainWindow
