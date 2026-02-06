@@ -312,6 +312,10 @@ def _venv_python(venv_dir: Path) -> Path:
     return venv_dir / "bin" / "python"
 
 
+def resolve_venv_python(venv_dir: Path) -> Path:
+    return _venv_python(venv_dir)
+
+
 def _is_pinned_dependency(value: str) -> bool:
     if "==" in value:
         return True
