@@ -13,6 +13,7 @@ from app.band_handling import BandHandling, ExportSettings
 from app.error_handling import UserFacingError, as_user_facing_error
 from app.mosaic_detection import preview_stitch_bounds, suggest_mosaic
 from app.metadata import extract_image_header_info
+from app.model_installation import ModelInstaller, resolve_model_cache_dir
 from app.output_metadata import metadata_loss_warning
 from app.session import SessionState, SessionStore
 
@@ -572,6 +573,11 @@ class ModelManagerPanel(QtWidgets.QGroupBox):
         self.version_combo = version_combo
         self.install_button = install_button
         self.uninstall_button = uninstall_button
+        self._installer = ModelInstaller()
+        self._install_actions_enabled = (
+            os.environ.get("SATELLITE_UPSCALE_DISABLE_INSTALL") != "1"
+        )
+        self._model_cache_dir = resolve_model_cache_dir()
         self.models = self._load_model_registry()
         self._populate_table()
         self._update_action_state()
@@ -587,18 +593,27 @@ class ModelManagerPanel(QtWidgets.QGroupBox):
             name = str(entry.get("name", "Unknown"))
             weights_url = str(entry.get("weights_url", ""))
             bundled = bool(entry.get("bundled"))
+            license_acceptance_required = bool(entry.get("license_acceptance_required"))
+            checksum = str(entry.get("checksum", ""))
             version = _extract_model_version(weights_url)
             versions = ["Latest"]
             if version and version not in versions:
                 versions.insert(0, version)
+            resolved_version = versions[0]
+            installed = bundled
+            if not bundled and self._install_actions_enabled:
+                installed = self._installer.is_installed(name, resolved_version)
             models.append(
                 {
                     "name": name,
                     "bundled": bundled,
-                    "installed": bundled,
+                    "installed": installed,
                     "updating": False,
-                    "version": versions[0],
+                    "version": resolved_version,
                     "versions": versions,
+                    "weights_url": weights_url,
+                    "checksum": checksum,
+                    "license_acceptance_required": license_acceptance_required,
                 }
             )
         return models
@@ -654,15 +669,33 @@ class ModelManagerPanel(QtWidgets.QGroupBox):
             return
         model = self.models[row]
         model["version"] = version
+        if not model.get("bundled") and self._install_actions_enabled:
+            model["installed"] = self._installer.is_installed(
+                str(model.get("name", "")), version
+            )
         version_item = self.model_table.item(row, 1)
         if version_item is not None:
             version_item.setText(version)
+        self._refresh_row_for_model(model)
 
     def _install_selected_model(self) -> None:
         model = self._selected_model()
         if model is None or model.get("bundled") or model.get("updating"):
             return
         if model.get("installed"):
+            return
+        if model.get("license_acceptance_required"):
+            self._show_install_error(
+                UserFacingError(
+                    title="License acceptance required",
+                    summary="This model requires explicit license acceptance before install.",
+                    suggested_fixes=(
+                        "Review the license terms and accept them before installing.",
+                    ),
+                    error_code="MODEL-004",
+                    can_retry=False,
+                )
+            )
             return
         self._begin_status_update(model, target_installed=True)
 
@@ -702,10 +735,43 @@ class ModelManagerPanel(QtWidgets.QGroupBox):
     ) -> None:
         model["updating"] = True
         self._refresh_row_for_model(model)
+        if not self._install_actions_enabled:
+            return
         QtCore.QTimer.singleShot(
             self._STATUS_UPDATE_DELAY_MS,
-            lambda: self._complete_status_update(model, target_installed),
+            lambda: self._perform_update(model, target_installed),
         )
+
+    def _perform_update(
+        self, model: dict[str, object], target_installed: bool
+    ) -> None:
+        final_installed = bool(model.get("installed"))
+        error: Exception | None = None
+        if target_installed:
+            try:
+                self._installer.install(
+                    str(model.get("name", "")),
+                    str(model.get("version", "Latest")),
+                    str(model.get("weights_url", "")),
+                    checksum=str(model.get("checksum", "")),
+                )
+                final_installed = True
+            except Exception as exc:  # noqa: BLE001
+                final_installed = False
+                error = exc
+        else:
+            try:
+                self._installer.uninstall(
+                    str(model.get("name", "")),
+                    str(model.get("version", "Latest")),
+                )
+                final_installed = False
+            except Exception as exc:  # noqa: BLE001
+                final_installed = True
+                error = exc
+        self._complete_status_update(model, final_installed)
+        if error is not None:
+            self._show_install_error(error)
 
     def _complete_status_update(
         self, model: dict[str, object], target_installed: bool
@@ -713,6 +779,11 @@ class ModelManagerPanel(QtWidgets.QGroupBox):
         model["installed"] = target_installed
         model["updating"] = False
         self._refresh_row_for_model(model)
+
+    def _show_install_error(self, exc: Exception) -> None:
+        error = as_user_facing_error(exc)
+        dialog = ErrorDialog(error, parent=self)
+        dialog.exec()
 
     def _update_action_state(self) -> None:
         model = self._selected_model()
@@ -1552,6 +1623,8 @@ class MainWindow(QtWidgets.QMainWindow):
         container_layout.addWidget(splitter)
 
         self.setCentralWidget(container)
+        status_bar = self.statusBar()
+        status_bar.setObjectName("mainStatusBar")
         self.splitter = splitter
         self.left_panel = left_panel
         self.input_list = input_list
@@ -1570,6 +1643,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.model_manager_panel = model_manager_panel
         self.changelog_panel = changelog_panel
         self.system_info_panel = system_info_panel
+        self.status_bar = status_bar
         self.run_button: QtWidgets.QPushButton | None = None
         self._batch_mode = False
 
@@ -1595,6 +1669,7 @@ class MainWindow(QtWidgets.QMainWindow):
             advanced_options_panel.completion_notification_check.isChecked()
         )
         self._wire_workflow_completion_notifications()
+        self._wire_workflow_stage_actions()
         self._wire_run_action()
 
     def _configure_shortcuts(self) -> None:
@@ -1644,6 +1719,90 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         self.run_button = self.workflow_stage_actions[run_index]
         self.run_button.clicked.connect(self._handle_run_clicked)
+
+    def _wire_workflow_stage_actions(self) -> None:
+        handlers = {
+            "Import": self._handle_import_stage,
+            "Review": self._handle_review_stage,
+            "Stitch (Optional)": self._handle_stitch_stage,
+            "Recommend": self._handle_recommend_stage,
+            "Export": self._handle_export_stage,
+        }
+        for stage_name, button in zip(
+            self.workflow_stage_names, self.workflow_stage_actions, strict=True
+        ):
+            handler = handlers.get(stage_name)
+            if handler is not None:
+                button.clicked.connect(handler)
+
+    def _set_workflow_message(self, message: str) -> None:
+        self.status_bar.showMessage(message)
+
+    def _handle_import_stage(self) -> None:
+        self.add_files_button.setFocus()
+        self._set_workflow_message("Import: add files or folders to begin.")
+
+    def _handle_review_stage(self) -> None:
+        selected_paths = self._selected_input_paths()
+        if len(selected_paths) == 1:
+            message = "Review: preview and metadata updated for the selected file."
+        elif len(selected_paths) > 1:
+            message = "Review: select a single file to inspect details."
+        else:
+            message = "Review: select a file to inspect preview and metadata."
+        self.comparison_viewer.setFocus()
+        self._set_workflow_message(message)
+
+    def _handle_stitch_stage(self) -> None:
+        selected_paths = self._selected_input_paths()
+        if len(selected_paths) < 2:
+            message = "Stitch: select at least two tiles to preview mosaic bounds."
+            self._set_workflow_message(message)
+            return
+        suggestion = suggest_mosaic(selected_paths)
+        if suggestion.message:
+            message = f"Stitch: {suggestion.message}"
+        elif preview_stitch_bounds(selected_paths) is not None:
+            message = "Stitch: stitch bounds previewed in metadata."
+        else:
+            message = "Stitch: no mosaic hints detected in selected tiles."
+        self._set_workflow_message(message)
+
+    def _handle_recommend_stage(self) -> None:
+        selected_paths = self._selected_input_paths()
+        if len(selected_paths) != 1:
+            if selected_paths:
+                message = "Recommend: select a single file for recommendations."
+            else:
+                message = "Recommend: select a single file to set a recommended preset."
+            self._set_workflow_message(message)
+            return
+        from app.provider_detection import recommend_provider
+
+        recommendation = recommend_provider(selected_paths[0])
+        if recommendation.ambiguous:
+            candidates = ", ".join(match.name for match in recommendation.candidates)
+            message = (
+                "Recommend: multiple providers match "
+                f"({candidates}). Choose a preset manually."
+            )
+            self._set_workflow_message(message)
+            return
+        if recommendation.best:
+            self.export_presets_panel.set_recommended_preset(recommendation.best)
+            self._set_workflow_message(
+                f"Recommend: suggested preset '{recommendation.best}' ready."
+            )
+            return
+        self._set_workflow_message(
+            "Recommend: no provider match; choose a preset manually."
+        )
+
+    def _handle_export_stage(self) -> None:
+        self.export_presets_panel.setFocus()
+        self._set_workflow_message(
+            "Export: confirm the preset and output format before saving outputs."
+        )
 
     def _handle_run_clicked(self) -> None:
         try:
