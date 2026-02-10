@@ -205,3 +205,7 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Local task tracking (keep private, local only)
+TASKS.md
+TASKS_bootstrap.md
