@@ -74,7 +74,15 @@ jobs:
         run: |
           tar -C dist -czf dist/SatelliteUpscale-linux.tar.gz SatelliteUpscale
 
-      - name: Generate checksums
+      - name: Generate checksums (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          python scripts/generate_release_checksums.py --dist-dir dist --pattern "SatelliteUpscale-${{ matrix.platform }}*" --output "dist/SHA256SUMS-${{ matrix.platform }}.txt"
+
+      - name: Generate checksums (macOS/Linux)
+        if: matrix.platform != 'windows'
+        shell: bash
         run: |
           python scripts/generate_release_checksums.py \
             --dist-dir dist \
