@@ -86,14 +86,17 @@ class TestLicenseVerification(unittest.TestCase):
                 f"{name} license must be permissive",
             )
 
-    def test_unverified_models_not_bundled(self) -> None:
+    def test_confirmed_models_not_bundled(self) -> None:
         verification = self._load_json(self.verification_path)
         registry = self._load_json(self.registry_path)
         registry_by_name = {entry["name"]: entry for entry in registry}
         verification_by_name = {entry["name"]: entry for entry in verification}
 
-        unverified_models = {"SRGAN adapted to EO", "SenGLEAN"}
-        for name in unverified_models:
+        confirmed_optional_models = {
+            "SRGAN adapted to EO": "Apache-2.0",
+            "SenGLEAN": "etalab-2.0",
+        }
+        for name, expected_license in confirmed_optional_models.items():
             self.assertIn(
                 name,
                 verification_by_name,
@@ -102,14 +105,19 @@ class TestLicenseVerification(unittest.TestCase):
             verification_entry = verification_by_name[name]
             self.assertEqual(
                 verification_entry["license"],
-                "UNVERIFIED",
-                f"{name} license must remain UNVERIFIED until confirmed",
+                expected_license,
+                f"{name} license should be {expected_license}",
             )
             registry_entry = registry_by_name.get(name)
             self.assertIsNotNone(registry_entry, f"{name} missing from registry.json")
+            self.assertEqual(
+                registry_entry["license"],
+                expected_license,
+                f"{name} license mismatch between registry and verification",
+            )
             self.assertFalse(
                 bool(registry_entry.get("bundled")),
-                f"{name} must not be bundled until license confirmed",
+                f"{name} must not be bundled in default distribution artifacts",
             )
 
 

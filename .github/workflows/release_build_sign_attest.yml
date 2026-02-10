@@ -1,0 +1,132 @@
+name: Build, Sign, and Attest Release Artifacts
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  build-sign-attest:
+    name: ${{ matrix.platform }} release artifact
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+          - os: macos-13
+            platform: macos
+          - os: ubuntu-22.04
+            platform: linux
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install packaging dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pyinstaller PySide6 rasterio numpy Pillow
+
+      - name: Build Windows bundle
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package_windows.ps1
+
+      - name: Build macOS bundle
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          bash scripts/package_macos.sh
+
+      - name: Build Linux bundle
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          bash scripts/package_linux.sh
+
+      - name: Archive Windows bundle
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist/SatelliteUpscale -DestinationPath dist/SatelliteUpscale-windows.zip -Force
+
+      - name: Archive macOS bundle
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent dist/SatelliteUpscale.app dist/SatelliteUpscale-macos.zip
+
+      - name: Archive Linux bundle
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          tar -C dist -czf dist/SatelliteUpscale-linux.tar.gz SatelliteUpscale
+
+      - name: Generate checksums
+        run: |
+          python scripts/generate_release_checksums.py \
+            --dist-dir dist \
+            --pattern "SatelliteUpscale-${{ matrix.platform }}*" \
+            --output "dist/SHA256SUMS-${{ matrix.platform }}.txt"
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v4.0.0
+
+      - name: Sign artifacts (keyless)
+        if: matrix.platform != 'windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in dist/SatelliteUpscale-${{ matrix.platform }}* dist/SHA256SUMS-${{ matrix.platform }}.txt; do
+            cosign sign-blob --yes --bundle "${file}.sigstore.json" "$file"
+          done
+
+      - name: Sign artifacts (keyless, Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $files = @(
+            Get-ChildItem -Path "dist/SatelliteUpscale-${{ matrix.platform }}*" -File
+          )
+          $files += Get-Item "dist/SHA256SUMS-${{ matrix.platform }}.txt"
+          foreach ($file in $files) {
+            cosign sign-blob --yes --bundle "$($file.FullName).sigstore.json" "$($file.FullName)"
+          }
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: |
+            dist/SatelliteUpscale-${{ matrix.platform }}*
+            dist/SHA256SUMS-${{ matrix.platform }}.txt
+            dist/*.sigstore.json
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.platform }}
+          path: |
+            dist/SatelliteUpscale-${{ matrix.platform }}*
+            dist/SHA256SUMS-${{ matrix.platform }}.txt
+            dist/*.sigstore.json
+
+      - name: Attach assets to GitHub Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/SatelliteUpscale-${{ matrix.platform }}*
+            dist/SHA256SUMS-${{ matrix.platform }}.txt
+            dist/*.sigstore.json

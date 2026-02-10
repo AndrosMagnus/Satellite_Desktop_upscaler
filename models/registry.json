@@ -13,7 +13,7 @@
       4
     ],
     "weights_url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth",
-    "checksum": "sha256:TODO",
+    "checksum": "sha256:4fa0d38905f75ac06eb49a7951b426670021be3018265fd191d2125df9d682f1",
     "default_options": {
       "scale": 4,
       "tiling": "auto",
@@ -23,7 +23,7 @@
   },
   {
     "name": "Satlas",
-    "source_url": "https://github.com/allenai/satlas-super-resolution",
+    "source_url": "https://github.com/allenai/satlas",
     "license": "Apache-2.0",
     "gpu_required": false,
     "cpu_supported": true,
@@ -36,7 +36,7 @@
       4
     ],
     "weights_url": "https://pub-25c498004d1e4d4c8da69b2c05676836.r2.dev/esrgan_1S2.pth",
-    "checksum": "sha256:TODO",
+    "checksum": "sha256:b4b1bb6c7d1b926083fc01edc039f1b143c743f9c403cd09878331765c20c405",
     "default_options": {
       "scale": 4,
       "tiling": "auto",
@@ -191,7 +191,7 @@
   {
     "name": "SRGAN adapted to EO",
     "source_url": "https://github.com/ESAOpenSR/SRGAN",
-    "license": "UNVERIFIED",
+    "license": "Apache-2.0",
     "gpu_required": false,
     "cpu_supported": true,
     "bands_supported": [
@@ -219,7 +219,7 @@
   },
   {
     "name": "S2DR3",
-    "source_url": "TBD",
+    "source_url": "https://github.com/Lavabas/Sentinel-2-Deep-Resolution-3.0",
     "license": "UNVERIFIED",
     "gpu_required": false,
     "cpu_supported": true,
@@ -230,8 +230,8 @@
       2,
       4
     ],
-    "weights_url": "TBD",
-    "checksum": "sha256:TODO",
+    "weights_url": "https://storage.googleapis.com/0x7ff601307fa5/s2dr3-20250307.1-cp311-cp311-linux_x86_64.whl",
+    "checksum": "sha256:ecebaa495b82b4da54d15f9c9c34de9bea8fd3a00cb34b69050323eca1ba9a37",
     "default_options": {
       "scale": 4,
       "tiling": "auto",
@@ -241,7 +241,7 @@
   },
   {
     "name": "SEN2SR",
-    "source_url": "https://github.com/ESAOpenSR/OpenSR",
+    "source_url": "https://github.com/ESAOpenSR/SEN2SR",
     "license": "UNVERIFIED",
     "gpu_required": false,
     "cpu_supported": true,
@@ -251,8 +251,8 @@
     "scales": [
       2
     ],
-    "weights_url": "TBD",
-    "checksum": "sha256:TODO",
+    "weights_url": "https://huggingface.co/tacofoundation/SEN2SR/resolve/main/SEN2SR/Reference_RSWIR_x2/model.safetensor",
+    "checksum": "sha256:1d1b93248ca0bb24cc20a6c2e83b2acd70517357fa322f9051af8f378d54eecc",
     "default_options": {
       "scale": 2,
       "tiling": "auto",
@@ -262,7 +262,7 @@
   },
   {
     "name": "LDSR-S2",
-    "source_url": "https://github.com/ESAOpenSR/OpenSR",
+    "source_url": "https://huggingface.co/simon-donike/RS-SR-LTDF",
     "license": "UNVERIFIED",
     "gpu_required": false,
     "cpu_supported": true,
@@ -272,8 +272,30 @@
     "scales": [
       2
     ],
-    "weights_url": "TBD",
-    "checksum": "sha256:TODO",
+    "weights_url": "https://huggingface.co/simon-donike/RS-SR-LTDF/resolve/main/opensr-ldsrs2_v1_0_0.ckpt",
+    "checksum": "sha256:e2621e3912eb7c14867c3d20c9029607ba941be8e166dc09621860fcac27dc3a",
+    "default_options": {
+      "scale": 2,
+      "tiling": "auto",
+      "precision": "auto"
+    },
+    "dependencies": []
+  },
+  {
+    "name": "EVOLAND Sentinel-2 SR",
+    "source_url": "https://github.com/Evoland-Land-Monitoring-Evolution/sentinel2_superresolution",
+    "license": "UNVERIFIED",
+    "gpu_required": false,
+    "cpu_supported": true,
+    "bands_supported": [
+      "Sentinel-2"
+    ],
+    "scales": [
+      2,
+      4
+    ],
+    "weights_url": "https://raw.githubusercontent.com/Evoland-Land-Monitoring-Evolution/sentinel2_superresolution/master/src/sentinel2_superresolution/models/s2v2x2_spatrad.onnx",
+    "checksum": "sha256:a49c14d2a0a2dd65d740568987a2ba75620c5050904f214bbde2b840a189876a",
     "default_options": {
       "scale": 2,
       "tiling": "auto",
@@ -284,7 +306,7 @@
   {
     "name": "SenGLEAN",
     "source_url": "https://ayush12gupta.github.io/publications/senglean.html",
-    "license": "UNVERIFIED",
+    "license": "etalab-2.0",
     "gpu_required": true,
     "cpu_supported": false,
     "bands_supported": [
@@ -316,8 +338,8 @@
       2,
       4
     ],
-    "weights_url": "TBD",
-    "checksum": "sha256:TODO",
+    "weights_url": "https://github.com/IMPLabUniPr/swin2-mose/releases/download/v1.0/sen2venus_exp4_4x_v5.zip",
+    "checksum": "sha256:a1711a5c327758ea70a6aafea392681ab6395f7b985524898744c8d231a0e5dc",
     "default_options": {
       "scale": 4,
       "tiling": "auto",
@@ -337,8 +359,8 @@
     "scales": [
       2
     ],
-    "weights_url": "TBD",
-    "checksum": "sha256:TODO",
+    "weights_url": "https://raw.githubusercontent.com/lanha/DSen2/master/models/s2_032_lr_1e-04.hdf5",
+    "checksum": "sha256:2dab3725ecb1a0f69116a864ffcb18139177b5287af1dff2495505d4c79322bb",
     "default_options": {
       "scale": 2,
       "tiling": "auto",
