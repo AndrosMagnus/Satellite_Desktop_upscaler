@@ -28,6 +28,13 @@ dev = [
 satellite-upscale-cli = "backend.main:main"
 satellite-upscale-gui = "app.ui:main"
 
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["app*", "backend*"]
+exclude = ["tests*", "models*", "packaging*", "scripts*", "docs*", "build*", "dist*"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"
