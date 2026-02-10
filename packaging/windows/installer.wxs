@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="SatelliteUpscale"
+           Manufacturer="SatelliteUpscale"
+           Version="0.1.0"
+           UpgradeCode="8D7DBFA8-8F7A-4A9D-BF95-5ED95E7A4D31"
+           Scope="perUser"
+           Language="1033">
+    <MediaTemplate />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="INSTALLFOLDER" Name="SatelliteUpscale" />
+    </StandardDirectory>
+
+    <Feature Id="MainFeature" Title="SatelliteUpscale" Level="1">
+      <ComponentGroupRef Id="ProductComponents" />
+    </Feature>
+  </Package>
+
+  <Fragment>
+    <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
+      <Component Id="MainExecutable" Guid="F95E6B7C-5049-4A24-8C47-90A1DCC2CFF6">
+        <File Source="dist/SatelliteUpscale/SatelliteUpscale.exe" />
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+</Wix>

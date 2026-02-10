@@ -1,6 +1,9 @@
+import json
 import os
 import tempfile
 import unittest
+from pathlib import Path
+from unittest import mock
 
 
 try:
@@ -200,6 +203,57 @@ class TestPrimaryLayout(unittest.TestCase):
             else:
                 os.environ["SATELLITE_UPSCALE_DISABLE_INSTALL"] = original_disable
 
+    def test_model_manager_requires_license_acceptance_for_gpl(self) -> None:
+        from app.ui import MainWindow
+
+        window = MainWindow()
+        panel = window.model_manager_panel
+
+        gpl_row = None
+        for row in range(panel.model_table.rowCount()):
+            item = panel.model_table.item(row, 0)
+            if item and item.text() == "DSen2":
+                gpl_row = row
+                break
+        self.assertIsNotNone(gpl_row, "DSen2 must be listed in the model table")
+
+        panel.model_table.selectRow(gpl_row)
+        QtWidgets.QApplication.processEvents()
+
+        with mock.patch(
+            "app.ui.QtWidgets.QMessageBox.question",
+            return_value=QtWidgets.QMessageBox.StandardButton.No,
+        ) as prompt:
+            panel.install_button.click()
+            QtWidgets.QApplication.processEvents()
+
+        model = panel.models[gpl_row]
+        self.assertTrue(prompt.called)
+        self.assertFalse(bool(model.get("updating")))
+        self.assertFalse(bool(model.get("installed")))
+
+    def test_model_manager_marks_missing_weights_as_unavailable(self) -> None:
+        from app.ui import MainWindow
+
+        window = MainWindow()
+        panel = window.model_manager_panel
+
+        unavailable_row = None
+        for row in range(panel.model_table.rowCount()):
+            item = panel.model_table.item(row, 0)
+            if item and item.text() == "MRDAM":
+                unavailable_row = row
+                break
+        self.assertIsNotNone(unavailable_row, "MRDAM must be listed in the model table")
+
+        panel.model_table.selectRow(unavailable_row)
+        QtWidgets.QApplication.processEvents()
+
+        status_item = panel.model_table.item(unavailable_row, 2)
+        self.assertIsNotNone(status_item)
+        self.assertEqual(status_item.text(), "Unavailable")
+        self.assertFalse(panel.install_button.isEnabled())
+
     def test_model_comparison_panel(self) -> None:
         from app.ui import MainWindow, ModelComparisonPanel
 
@@ -250,6 +304,33 @@ class TestPrimaryLayout(unittest.TestCase):
         current_item = panel.preset_list.currentItem()
         self.assertIsNotNone(current_item)
         self.assertEqual(current_item.text(), "Landsat")
+
+    def test_run_output_controls(self) -> None:
+        from app.ui import MainWindow
+
+        window = MainWindow()
+        self.assertEqual(window.run_output_group.objectName(), "runOutputGroup")
+        self.assertEqual(window.output_dir_input.objectName(), "runOutputDirInput")
+        self.assertEqual(
+            window.output_dir_browse_button.objectName(), "runOutputDirBrowseButton"
+        )
+        self.assertEqual(
+            window.output_dir_auto_button.objectName(), "runOutputDirAutoButton"
+        )
+        self.assertEqual(window.run_progress_bar.objectName(), "runProgressBar")
+        self.assertEqual(window.run_progress_label.objectName(), "runProgressLabel")
+        self.assertEqual(window.run_cancel_button.objectName(), "runCancelButton")
+        self.assertFalse(window.run_cancel_button.isEnabled())
+        self.assertEqual(window.run_progress_label.text(), "Idle.")
+
+    def test_manual_output_dir_overrides_auto_output_dir(self) -> None:
+        from app.ui import MainWindow
+
+        window = MainWindow()
+        manual_path = Path(tempfile.gettempdir()) / "manual-upscaled-output"
+        window.output_dir_input.setText(str(manual_path))
+        resolved = window._resolve_run_output_dir([Path("/tmp/scene.tif")])
+        self.assertEqual(resolved, manual_path)
 
     def test_batch_mode_disables_per_image_overrides(self) -> None:
         from app.ui import MainWindow
@@ -375,6 +456,31 @@ class TestPrimaryLayout(unittest.TestCase):
         finally:
             os.unlink(path)
 
+    def test_start_run_writes_processing_report(self) -> None:
+        from app.ui import MainWindow
+
+        window = MainWindow()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = Path(tmpdir) / "scene.tif"
+            output_dir = Path(tmpdir) / "outputs"
+            input_path.write_bytes(b"fake-raster")
+            window.output_dir_input.setText(str(output_dir))
+
+            window.input_list.add_paths([str(input_path)])
+            window.input_list.clearSelection()
+            window.input_list.item(0).setSelected(True)
+            QtWidgets.QApplication.processEvents()
+
+            window._start_run()
+
+            report_path = output_dir / "processing_report.json"
+            self.assertTrue(report_path.exists())
+            payload = json.loads(report_path.read_text(encoding="utf-8"))
+            self.assertIn("settings", payload)
+            self.assertIn("model", payload)
+            self.assertIn("timings", payload)
+            self.assertEqual(payload["model"]["name"], "Real-ESRGAN")
+
     def test_comparison_controls(self) -> None:
         from app.ui import MainWindow, PreviewViewer
 
@@ -431,23 +537,53 @@ class TestPrimaryLayout(unittest.TestCase):
         self.assertEqual(panel.tabs.tabText(1), "Model Updates")
         self.assertGreater(panel.app_list.count(), 0)
         self.assertGreater(panel.model_list.count(), 0)
+        self.assertEqual(
+            panel.update_checks_enabled.objectName(), "updateChecksEnabledCheck"
+        )
+        self.assertEqual(panel.check_updates_button.objectName(), "checkUpdatesButton")
+        self.assertEqual(panel.update_status.objectName(), "updateStatusLabel")
+        self.assertFalse(panel.update_checks_enabled.isChecked())
+        self.assertFalse(panel.check_updates_button.isEnabled())
+        self.assertIn("disabled", panel.update_status.text().lower())
 
         first_app_entry = panel.app_list.item(0).data(QtCore.Qt.ItemDataRole.UserRole)
         self.assertEqual(
             panel.app_details.text(),
-            f"{first_app_entry['date']} — {first_app_entry['details']}",
+            f"{first_app_entry['date']} - {first_app_entry['details']}",
         )
         panel.app_list.setCurrentRow(1)
         second_app_entry = panel.app_list.item(1).data(QtCore.Qt.ItemDataRole.UserRole)
         self.assertEqual(
             panel.app_details.text(),
-            f"{second_app_entry['date']} — {second_app_entry['details']}",
+            f"{second_app_entry['date']} - {second_app_entry['details']}",
         )
         first_model_entry = panel.model_list.item(0).data(QtCore.Qt.ItemDataRole.UserRole)
         self.assertEqual(
             panel.model_details.text(),
-            f"{first_model_entry['date']} — {first_model_entry['details']}",
+            f"{first_model_entry['date']} - {first_model_entry['details']}",
         )
+
+
+        panel._apply_feed_entries(
+            (
+                {
+                    "date": "2026-02-10",
+                    "title": "Feed app update",
+                    "details": "Applied from feed.",
+                },
+            ),
+            (
+                {
+                    "date": "2026-02-10",
+                    "title": "Feed model update",
+                    "details": "Applied from feed.",
+                },
+            ),
+        )
+        self.assertEqual(panel.app_list.count(), 1)
+        self.assertIn("Feed app update", panel.app_list.item(0).text())
+        self.assertEqual(panel.model_list.count(), 1)
+        self.assertIn("Feed model update", panel.model_list.item(0).text())
 
 
 if __name__ == "__main__":

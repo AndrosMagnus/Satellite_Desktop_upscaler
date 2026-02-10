@@ -31,6 +31,7 @@ MANIFEST
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
+!packaging/pyinstaller/*.spec
 
 # Installer logs
 pip-log.txt
@@ -209,3 +210,8 @@ __marimo__/
 # Local task tracking (keep private, local only)
 TASKS.md
 TASKS_bootstrap.md
+PRD.md
+ralphy-tasks.json
+
+# Local validation artifacts
+reports/

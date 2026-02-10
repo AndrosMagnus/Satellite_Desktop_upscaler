@@ -22,6 +22,7 @@ class TestExportMetadataWarning(unittest.TestCase):
         from app.ui import ExportPresetsPanel
 
         panel = ExportPresetsPanel()
+        panel.show()
         panel.output_format_combo.setCurrentText("PNG")
         panel.set_input_format("GeoTIFF")
         QtWidgets.QApplication.processEvents()
@@ -33,6 +34,7 @@ class TestExportMetadataWarning(unittest.TestCase):
         from app.ui import ExportPresetsPanel
 
         panel = ExportPresetsPanel()
+        panel.show()
         panel.output_format_combo.setCurrentText("GeoTIFF")
         panel.set_input_format("GeoTIFF")
         QtWidgets.QApplication.processEvents()

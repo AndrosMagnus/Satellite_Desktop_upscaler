@@ -5,12 +5,24 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import sys
+
+if __package__ in {None, ""}:
+    _REPO_ROOT = Path(__file__).resolve().parents[1]
+    if str(_REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(_REPO_ROOT))
 
 from app.validation import (
     evaluate_dataset,
     load_samples_from_manifest,
     report_to_dict,
     write_preview_ppm,
+)
+from app.validation_baselines import (
+    evaluate_threshold,
+    load_validation_baselines,
+    resolve_threshold,
+    threshold_to_dict,
 )
 
 DEFAULT_SAMPLE_MODELS = (
@@ -57,6 +69,17 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Skip generating preview images.",
     )
+    parser.add_argument(
+        "--baseline",
+        type=Path,
+        default=Path(__file__).resolve().parent / "sample_data" / "validation_baselines.json",
+        help="Baseline threshold JSON file.",
+    )
+    parser.add_argument(
+        "--fail-on-threshold",
+        action="store_true",
+        help="Exit with code 2 if metrics do not meet threshold.",
+    )
     return parser.parse_args()
 
 
@@ -101,6 +124,8 @@ def main() -> int:
 
     output_root = args.output
     output_root.mkdir(parents=True, exist_ok=True)
+    baselines = load_validation_baselines(args.baseline)
+    threshold_failed = False
 
     for model_name in models:
         samples = load_samples_from_manifest(manifest_path, model_name=model_name)
@@ -110,6 +135,12 @@ def main() -> int:
 
         report_payload = report_to_dict(report)
         report_payload["model"] = model_name
+        threshold = resolve_threshold(baselines, dataset="eo", model=model_name)
+        if threshold is not None:
+            result = evaluate_threshold(report, threshold)
+            report_payload["threshold"] = threshold_to_dict(threshold, result)
+            if not result.passed:
+                threshold_failed = True
         report_path = output_dir / "report.json"
         report_path.write_text(json.dumps(report_payload, indent=2), encoding="utf-8")
 
@@ -124,6 +155,8 @@ def main() -> int:
                     data_range=args.data_range,
                 )
 
+    if args.fail_on_threshold and threshold_failed:
+        return 2
     return 0
 
 

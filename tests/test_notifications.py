@@ -40,11 +40,18 @@ class TestCompletionNotifications(unittest.TestCase):
             cls.app = QtWidgets.QApplication([])
 
     def _add_temp_input(self, window: "QtWidgets.QMainWindow") -> str:
-        handle = tempfile.NamedTemporaryFile(delete=False)
+        handle = tempfile.NamedTemporaryFile(delete=False, suffix=".tif")
         handle.close()
         window.input_list.add_paths([handle.name])
         window.input_list.clearSelection()
-        window.input_list.item(0).setSelected(True)
+        for index in range(window.input_list.count() - 1, -1, -1):
+            item = window.input_list.item(index)
+            if item is None:
+                continue
+            if item.text() == handle.name:
+                item.setSelected(True)
+                window.input_list.setCurrentRow(index)
+                break
         QtWidgets.QApplication.processEvents()
         return handle.name
 
@@ -93,7 +100,7 @@ class TestCompletionNotifications(unittest.TestCase):
         self.assertEqual(fake_manager.calls, [])
         os.unlink(temp_path)
 
-    def test_export_completion_notification(self) -> None:
+    def test_export_stage_click_does_not_emit_completion_notification(self) -> None:
         from app.ui import MainWindow
 
         fake_manager = _FakeNotificationManager()
@@ -102,6 +109,18 @@ class TestCompletionNotifications(unittest.TestCase):
         notification_check.setChecked(True)
 
         window._handle_export_stage()
+        self._flush_events()
+        self.assertEqual(fake_manager.calls, [])
+
+    def test_export_completion_notification_signal(self) -> None:
+        from app.ui import MainWindow
+
+        fake_manager = _FakeNotificationManager()
+        window = MainWindow(notification_manager=fake_manager)
+        notification_check = window.advanced_options_panel.completion_notification_check
+        notification_check.setChecked(True)
+
+        window._schedule_export_completion()
         self._flush_events()
         self.assertEqual(
             fake_manager.calls,

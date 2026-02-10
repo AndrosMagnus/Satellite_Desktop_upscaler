@@ -5,13 +5,31 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 from collections.abc import Callable
+from datetime import datetime, timezone
 from pathlib import Path
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from app.band_profile_store import BandProfileStore
 from app.band_handling import BandHandling, ExportSettings
+from app.dataset_analysis import (
+    DatasetInfo,
+    analyze_dataset,
+    group_by_grid,
+    summarize_grid_groups,
+)
 from app.error_handling import UserFacingError, as_user_facing_error
+from app.hardware_profile import detect_hardware_profile
+from app.imagery_policy import (
+    OutputPlan,
+    RgbBandMapping,
+    build_output_plan,
+    default_rgb_mapping,
+    load_model_band_support,
+    model_supports_dataset,
+)
 from app.mosaic_detection import preview_stitch_bounds, suggest_mosaic
 from app.metadata import extract_image_header_info
 from app.model_installation import (
@@ -19,7 +37,13 @@ from app.model_installation import (
     resolve_model_cache_dir,
     run_missing_health_checks,
 )
+from app.model_selection import recommend_execution_plan
 from app.output_metadata import metadata_loss_warning
+from app.processing_report import (
+    ProcessingTimings,
+    build_processing_report,
+    export_processing_report,
+)
 from app.run_settings import (
     RunSettings,
     parse_compute,
@@ -28,6 +52,15 @@ from app.run_settings import (
     parse_tiling,
 )
 from app.session import SessionState, SessionStore
+from app.stitching import ReprojectionNotSupportedError, stitch_rasters
+from app.update_checks import UpdatePreferenceStore, UpdatePreferences, check_for_updates
+from app.upscale_execution import (
+    RunCancelledError,
+    UpscaleArtifact,
+    UpscaleRequest,
+    expand_input_paths,
+    run_upscale_batch,
+)
 
 
 def _format_bytes(size_bytes: int) -> str:
@@ -42,6 +75,18 @@ def _format_bytes(size_bytes: int) -> str:
             return f"{size:.1f} {unit}"
         size /= 1024
     return f"{size:.1f} TB"
+
+
+def _format_pixel_size(
+    transform: tuple[float, float, float, float, float, float] | None,
+) -> str:
+    if transform is None:
+        return "Unknown"
+    x_size = abs(float(transform[0]))
+    y_size = abs(float(transform[4]))
+    if x_size <= 0.0 or y_size <= 0.0:
+        return "Unknown"
+    return f"{x_size:.6f} x {y_size:.6f}"
 
 
 def _extract_model_version(weights_url: str) -> str | None:
@@ -120,8 +165,47 @@ def _format_model_versions(models: list[dict[str, object]]) -> str:
         name = str(entry.get("name", "Unknown"))
         weights_url = str(entry.get("weights_url", ""))
         version = _extract_model_version(weights_url) or "Unknown"
-        lines.append(f"{name} — {version}")
+        lines.append(f"{name} - {version}")
     return "\n".join(lines)
+
+
+def _read_app_version() -> str:
+    pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    try:
+        for line in pyproject.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if stripped.startswith("version"):
+                _, value = stripped.split("=", 1)
+                return value.strip().strip("\"'")
+    except OSError:
+        return "0.0.0"
+    return "0.0.0"
+
+
+def _slugify_label(value: str) -> str:
+    cleaned: list[str] = []
+    previous_dash = False
+    for char in value.strip().lower():
+        if char.isalnum():
+            cleaned.append(char)
+            previous_dash = False
+            continue
+        if not previous_dash:
+            cleaned.append("-")
+            previous_dash = True
+    slug = "".join(cleaned).strip("-")
+    return slug or "model"
+
+
+def _summarize_run_warnings(warnings: list[str]) -> list[str]:
+    unique = [item for item in dict.fromkeys(warnings) if item]
+    if len(unique) <= 2:
+        return unique
+    remaining = len(unique) - 2
+    return [unique[0], unique[1], f"{remaining} additional recommendation warning(s)."]
+
+
+_DEFAULT_BUNDLED_MODELS = {"Real-ESRGAN", "Satlas"}
 
 
 class PreviewViewer(QtWidgets.QLabel):
@@ -584,7 +668,7 @@ class ModelManagerPanel(QtWidgets.QGroupBox):
 
         selection_label = QtWidgets.QLabel("Select a model to manage.")
         selection_label.setObjectName("modelSelectionLabel")
-        status_label = QtWidgets.QLabel("Status: —")
+        status_label = QtWidgets.QLabel("Status: -")
         status_label.setObjectName("modelStatusLabel")
 
         action_row = QtWidgets.QWidget()
@@ -621,10 +705,16 @@ class ModelManagerPanel(QtWidgets.QGroupBox):
         self.version_combo = version_combo
         self.install_button = install_button
         self.uninstall_button = uninstall_button
-        self._install_actions_enabled = (
-            os.environ.get("SATELLITE_UPSCALE_ENABLE_INSTALL") == "1"
-            and os.environ.get("SATELLITE_UPSCALE_DISABLE_INSTALL") != "1"
-        )
+        enable_env = os.environ.get("SATELLITE_UPSCALE_ENABLE_INSTALL")
+        disable_env = os.environ.get("SATELLITE_UPSCALE_DISABLE_INSTALL")
+        if (
+            "PYTEST_CURRENT_TEST" in os.environ
+            and enable_env is None
+            and disable_env is None
+        ):
+            self._install_actions_enabled = False
+        else:
+            self._install_actions_enabled = disable_env != "1" and enable_env != "0"
         self._model_cache_dir = resolve_model_cache_dir()
         self._installer = ModelInstaller(cache_dir=self._model_cache_dir)
         self.cache_dir_input.setText(str(self._model_cache_dir))
@@ -697,12 +787,22 @@ class ModelManagerPanel(QtWidgets.QGroupBox):
         for entry in _load_model_registry():
             name = str(entry.get("name", "Unknown"))
             weights_url = str(entry.get("weights_url", ""))
-            bundled = bool(entry.get("bundled"))
+            source_url = str(entry.get("source_url", ""))
+            license_name = str(entry.get("license", "UNVERIFIED"))
+            bundled = bool(entry.get("bundled")) or name in _DEFAULT_BUNDLED_MODELS
             license_acceptance_required = bool(entry.get("license_acceptance_required"))
+            if not license_acceptance_required:
+                normalized_license = license_name.strip().upper()
+                if normalized_license.startswith("GPL"):
+                    license_acceptance_required = True
             checksum = str(entry.get("checksum", ""))
             dependencies = entry.get("dependencies", [])
             if not isinstance(dependencies, list):
                 dependencies = []
+            available, availability_reason = self._resolve_install_availability(
+                weights_url=weights_url,
+                checksum=checksum,
+            )
             version = _extract_model_version(weights_url)
             versions = ["Latest"]
             if version and version not in versions:
@@ -720,9 +820,13 @@ class ModelManagerPanel(QtWidgets.QGroupBox):
                     "version": resolved_version,
                     "versions": versions,
                     "weights_url": weights_url,
+                    "source_url": source_url,
+                    "license": license_name,
                     "checksum": checksum,
                     "dependencies": dependencies,
                     "license_acceptance_required": license_acceptance_required,
+                    "available": available,
+                    "availability_reason": availability_reason,
                 }
             )
         return models
@@ -740,6 +844,8 @@ class ModelManagerPanel(QtWidgets.QGroupBox):
     def _status_text(self, model: dict[str, object]) -> str:
         if model.get("updating"):
             return "Updating"
+        if not bool(model.get("available", True)) and not model.get("installed"):
+            return "Unavailable"
         return "Installed" if model.get("installed") else "Available"
 
     def _selected_row(self) -> int | None:
@@ -758,12 +864,16 @@ class ModelManagerPanel(QtWidgets.QGroupBox):
         model = self._selected_model()
         if model is None:
             self.selection_label.setText("Select a model to manage.")
-            self.status_label.setText("Status: —")
+            self.status_label.setText("Status: -")
             self.version_combo.clear()
             self._update_action_state()
             return
 
         self.selection_label.setText(f"Selected: {model['name']}")
+        if not bool(model.get("available", True)) and not model.get("installed"):
+            reason = str(model.get("availability_reason", "")).strip()
+            if reason:
+                self.selection_label.setText(f"Selected: {model['name']} ({reason})")
         self.status_label.setText(f"Status: {self._status_text(model)}")
         self.version_combo.blockSignals(True)
         self.version_combo.clear()
@@ -793,20 +903,47 @@ class ModelManagerPanel(QtWidgets.QGroupBox):
             return
         if model.get("installed"):
             return
-        if model.get("license_acceptance_required"):
+        if not bool(model.get("available", True)):
+            summary = str(model.get("availability_reason", "")).strip()
+            if not summary:
+                summary = "Required weights/checksum metadata is not available yet."
             self._show_install_error(
                 UserFacingError(
-                    title="License acceptance required",
-                    summary="This model requires explicit license acceptance before install.",
+                    title="Model not yet available",
+                    summary=summary,
                     suggested_fixes=(
-                        "Review the license terms and accept them before installing.",
+                        "Choose another model for now.",
+                        "Update the model registry when upstream weights/checksum are published.",
                     ),
-                    error_code="MODEL-004",
+                    error_code="MODEL-013",
                     can_retry=False,
                 )
             )
             return
+        if model.get("license_acceptance_required"):
+            if not self._confirm_license_acceptance(model):
+                return
         self._begin_status_update(model, target_installed=True)
+
+    def _confirm_license_acceptance(self, model: dict[str, object]) -> bool:
+        license_name = str(model.get("license", "Unknown"))
+        source_url = str(model.get("source_url", ""))
+        model_name = str(model.get("name", "Model"))
+        message = (
+            f"{model_name} uses {license_name}.\n\n"
+            "This license is optional-only and requires explicit acceptance before install."
+        )
+        if source_url:
+            message = f"{message}\n\nSource: {source_url}"
+        response = QtWidgets.QMessageBox.question(
+            self,
+            "License acceptance required",
+            f"{message}\n\nDo you accept and continue?",
+            QtWidgets.QMessageBox.StandardButton.Yes
+            | QtWidgets.QMessageBox.StandardButton.No,
+            QtWidgets.QMessageBox.StandardButton.No,
+        )
+        return response == QtWidgets.QMessageBox.StandardButton.Yes
 
     def _uninstall_selected_model(self) -> None:
         model = self._selected_model()
@@ -917,8 +1054,23 @@ class ModelManagerPanel(QtWidgets.QGroupBox):
             self.uninstall_button.setEnabled(False)
             return
         installed = bool(model.get("installed"))
-        self.install_button.setEnabled(not installed)
+        available = bool(model.get("available", True))
+        self.install_button.setEnabled(available and not installed)
         self.uninstall_button.setEnabled(installed)
+
+    def _resolve_install_availability(
+        self,
+        *,
+        weights_url: str,
+        checksum: str,
+    ) -> tuple[bool, str]:
+        normalized_weights = weights_url.strip()
+        if not normalized_weights or normalized_weights.upper() == "TBD":
+            return (False, "no published weights yet")
+        normalized_checksum = checksum.strip().upper()
+        if not normalized_checksum or normalized_checksum in {"TODO", "SHA256:TODO"}:
+            return (False, "checksum not published yet")
+        return (True, "")
 
 
 class CollapsiblePanel(QtWidgets.QWidget):
@@ -1473,20 +1625,43 @@ class ChangelogPanel(QtWidgets.QGroupBox):
         tabs.addTab(app_tab, "App Updates")
         tabs.addTab(model_tab, "Model Updates")
 
+        update_controls = QtWidgets.QWidget()
+        update_controls_layout = QtWidgets.QHBoxLayout(update_controls)
+        update_controls_layout.setContentsMargins(0, 0, 0, 0)
+        update_controls_layout.setSpacing(6)
+        update_checks_enabled = QtWidgets.QCheckBox("Enable update checks")
+        update_checks_enabled.setObjectName("updateChecksEnabledCheck")
+        check_updates_button = QtWidgets.QPushButton("Check now")
+        check_updates_button.setObjectName("checkUpdatesButton")
+        update_controls_layout.addWidget(update_checks_enabled)
+        update_controls_layout.addWidget(check_updates_button)
+        update_controls_layout.addStretch(1)
+
+        update_status = QtWidgets.QLabel("Update checks are disabled.")
+        update_status.setObjectName("updateStatusLabel")
+        update_status.setWordWrap(True)
+
         layout.addWidget(helper_text)
         layout.addWidget(tabs)
+        layout.addWidget(update_controls)
+        layout.addWidget(update_status)
 
         self.tabs = tabs
         self.app_list = app_list
         self.app_details = app_details
         self.model_list = model_list
         self.model_details = model_details
+        self.update_checks_enabled = update_checks_enabled
+        self.check_updates_button = check_updates_button
+        self.update_status = update_status
+        self._update_pref_store = UpdatePreferenceStore()
         self._app_entries = self._build_app_entries()
         self._model_entries = self._build_model_entries()
         self._populate_list(self.app_list, self._app_entries)
         self._populate_list(self.model_list, self._model_entries)
         self._select_initial(self.app_list, self._app_entries, self.app_details)
         self._select_initial(self.model_list, self._model_entries, self.model_details)
+        self._load_update_preference()
 
         self.app_list.currentRowChanged.connect(
             lambda row: self._apply_entry(row, self._app_entries, self.app_details)
@@ -1494,6 +1669,8 @@ class ChangelogPanel(QtWidgets.QGroupBox):
         self.model_list.currentRowChanged.connect(
             lambda row: self._apply_entry(row, self._model_entries, self.model_details)
         )
+        self.update_checks_enabled.toggled.connect(self._set_update_checks_enabled)
+        self.check_updates_button.clicked.connect(self._check_updates_now)
 
     def _build_tab(
         self, list_object_name: str
@@ -1556,7 +1733,7 @@ class ChangelogPanel(QtWidgets.QGroupBox):
     ) -> None:
         changelog_list.clear()
         for entry in entries:
-            label = f"{entry['date']} — {entry['title']}"
+            label = f"{entry['date']} - {entry['title']}"
             item = QtWidgets.QListWidgetItem(label)
             item.setData(QtCore.Qt.ItemDataRole.UserRole, entry)
             changelog_list.addItem(item)
@@ -1583,7 +1760,60 @@ class ChangelogPanel(QtWidgets.QGroupBox):
             details.setText("Select an entry to see details.")
             return
         entry = entries[row]
-        details.setText(f"{entry['date']} — {entry['details']}")
+        details.setText(f"{entry['date']} - {entry['details']}")
+
+
+    def _load_update_preference(self) -> None:
+        preference = self._update_pref_store.load()
+        self.update_checks_enabled.setChecked(preference.enabled)
+        self.check_updates_button.setEnabled(preference.enabled)
+        if preference.enabled:
+            self.update_status.setText("Update checks are enabled.")
+        else:
+            self.update_status.setText("Update checks are disabled.")
+
+    def _set_update_checks_enabled(self, enabled: bool) -> None:
+        self._update_pref_store.save(UpdatePreferences(enabled=enabled))
+        self.check_updates_button.setEnabled(enabled)
+        if enabled:
+            self.update_status.setText("Update checks are enabled.")
+        else:
+            self.update_status.setText("Update checks are disabled.")
+
+    def _check_updates_now(self) -> None:
+        if not self.update_checks_enabled.isChecked():
+            self.update_status.setText("Update checks are disabled.")
+            return
+        result = check_for_updates(
+            current_app_version=_read_app_version(),
+            model_versions=self._current_model_versions(),
+        )
+        self.update_status.setText(result.message)
+        self._apply_feed_entries(result.app_entries, result.model_entries)
+
+    def _apply_feed_entries(
+        self,
+        app_entries: tuple[dict[str, str], ...],
+        model_entries: tuple[dict[str, str], ...],
+    ) -> None:
+        if app_entries:
+            self._app_entries = list(app_entries)
+            self._populate_list(self.app_list, self._app_entries)
+            self._select_initial(self.app_list, self._app_entries, self.app_details)
+        if model_entries:
+            self._model_entries = list(model_entries)
+            self._populate_list(self.model_list, self._model_entries)
+            self._select_initial(self.model_list, self._model_entries, self.model_details)
+
+    def _current_model_versions(self) -> dict[str, str]:
+        versions: dict[str, str] = {}
+        for model in _load_model_registry():
+            name = str(model.get("name", ""))
+            if not name:
+                continue
+            weights_url = str(model.get("weights_url", ""))
+            versions[name] = _extract_model_version(weights_url) or "Unknown"
+        return versions
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -1600,6 +1830,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self._configure_shortcuts()
         self._current_preview_image: QtGui.QImage | None = None
         self._update_comparison_state()
+        self._band_profile_store = BandProfileStore()
+        self._model_band_support = load_model_band_support()
+        self._run_output_plans: dict[Path, OutputPlan] = {}
+        self._run_rgb_mappings: dict[Path, RgbBandMapping] = {}
+        self._last_run_models: list[str] = []
+        self._stitch_candidate_signature: tuple[str, ...] | None = None
+        self._run_cancel_requested = False
+        self._run_busy = False
         self._session_store = SessionStore()
         self._restoring_session = False
         self._session_dirty = False
@@ -1676,6 +1914,15 @@ class MainWindow(QtWidgets.QMainWindow):
             "Path",
             "Format",
             "Dimensions",
+            "Provider",
+            "Sensor",
+            "Acquisition time",
+            "Scene ID",
+            "Band count",
+            "Data type",
+            "NoData",
+            "CRS",
+            "Pixel size",
             "File size",
             "Modified",
             "Stitch extent",
@@ -1684,7 +1931,7 @@ class MainWindow(QtWidgets.QMainWindow):
         metadata_value_labels: dict[str, QtWidgets.QLabel] = {}
         for field in metadata_fields:
             field_label = QtWidgets.QLabel(field)
-            value_label = QtWidgets.QLabel("—")
+            value_label = QtWidgets.QLabel("-")
             value_label.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
             value_label.setObjectName(f"metadataValue{field.replace(' ', '')}")
             metadata_form_layout.addRow(field_label, value_label)
@@ -1724,10 +1971,48 @@ class MainWindow(QtWidgets.QMainWindow):
         workflow_layout.addStretch(1)
         workflow_stage_names = [stage_label for stage_label, _ in workflow_stages]
 
+        run_output_group = QtWidgets.QGroupBox("Run Output")
+        run_output_group.setObjectName("runOutputGroup")
+        run_output_layout = QtWidgets.QVBoxLayout(run_output_group)
+        run_output_layout.setSpacing(6)
+
+        output_row = QtWidgets.QWidget()
+        output_row_layout = QtWidgets.QHBoxLayout(output_row)
+        output_row_layout.setContentsMargins(0, 0, 0, 0)
+        output_row_layout.setSpacing(6)
+        output_dir_input = QtWidgets.QLineEdit()
+        output_dir_input.setObjectName("runOutputDirInput")
+        output_dir_input.setClearButtonEnabled(True)
+        output_dir_input.setPlaceholderText("Auto: next to first selected input")
+        output_dir_browse = QtWidgets.QPushButton("Browse")
+        output_dir_browse.setObjectName("runOutputDirBrowseButton")
+        output_dir_auto = QtWidgets.QPushButton("Use Auto")
+        output_dir_auto.setObjectName("runOutputDirAutoButton")
+        output_row_layout.addWidget(output_dir_input, 1)
+        output_row_layout.addWidget(output_dir_browse)
+        output_row_layout.addWidget(output_dir_auto)
+
+        run_progress_bar = QtWidgets.QProgressBar()
+        run_progress_bar.setObjectName("runProgressBar")
+        run_progress_bar.setRange(0, 1)
+        run_progress_bar.setValue(0)
+        run_progress_bar.setFormat("Idle")
+        run_progress_label = QtWidgets.QLabel("Idle.")
+        run_progress_label.setObjectName("runProgressLabel")
+        run_cancel_button = QtWidgets.QPushButton("Cancel run")
+        run_cancel_button.setObjectName("runCancelButton")
+        run_cancel_button.setEnabled(False)
+
+        run_output_layout.addWidget(output_row)
+        run_output_layout.addWidget(run_progress_bar)
+        run_output_layout.addWidget(run_progress_label)
+        run_output_layout.addWidget(run_cancel_button)
+
         right_layout.addWidget(preview_group)
         right_layout.addWidget(model_comparison_panel)
         right_layout.addWidget(metadata_group)
         right_layout.addWidget(workflow_group)
+        right_layout.addWidget(run_output_group)
         export_presets_panel = ExportPresetsPanel()
         right_layout.addWidget(export_presets_panel)
         advanced_options_panel = AdvancedOptionsPanel()
@@ -1766,6 +2051,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.workflow_stage_labels = workflow_stage_labels
         self.workflow_stage_actions = workflow_stage_actions
         self.workflow_stage_names = workflow_stage_names
+        self.run_output_group = run_output_group
+        self.output_dir_input = output_dir_input
+        self.output_dir_browse_button = output_dir_browse
+        self.output_dir_auto_button = output_dir_auto
+        self.run_progress_bar = run_progress_bar
+        self.run_progress_label = run_progress_label
+        self.run_cancel_button = run_cancel_button
         self.export_presets_panel = export_presets_panel
         self.advanced_options_panel = advanced_options_panel
         self.model_manager_panel = model_manager_panel
@@ -1795,6 +2087,10 @@ class MainWindow(QtWidgets.QMainWindow):
         advanced_options_panel.completion_notification_check.toggled.connect(
             self._set_completion_notifications_enabled
         )
+        output_dir_input.editingFinished.connect(self._apply_output_dir_from_text)
+        output_dir_browse.clicked.connect(self._browse_output_dir)
+        output_dir_auto.clicked.connect(self._use_auto_output_dir)
+        run_cancel_button.clicked.connect(self._request_run_cancel)
         self._set_completion_notifications_enabled(
             advanced_options_panel.completion_notification_check.isChecked()
         )
@@ -1867,6 +2163,72 @@ class MainWindow(QtWidgets.QMainWindow):
     def _set_workflow_message(self, message: str) -> None:
         self.status_bar.showMessage(message)
 
+    def _selected_output_dir(self) -> Path | None:
+        raw = self.output_dir_input.text().strip()
+        if not raw:
+            return None
+        return Path(raw).expanduser()
+
+    def _apply_output_dir_from_text(self) -> None:
+        selected = self._selected_output_dir()
+        if selected is None:
+            return
+        self.output_dir_input.setText(str(selected))
+
+    def _browse_output_dir(self) -> None:
+        start_dir = self.output_dir_input.text().strip() or str(Path.cwd())
+        selected = QtWidgets.QFileDialog.getExistingDirectory(
+            self,
+            "Select run output folder",
+            start_dir,
+            QtWidgets.QFileDialog.Option.ShowDirsOnly,
+        )
+        if selected:
+            self.output_dir_input.setText(str(Path(selected).expanduser()))
+
+    def _use_auto_output_dir(self) -> None:
+        self.output_dir_input.setText("")
+
+    def _set_run_busy(self, busy: bool) -> None:
+        self._run_busy = busy
+        self.run_cancel_button.setEnabled(busy)
+        self.output_dir_input.setEnabled(not busy)
+        self.output_dir_browse_button.setEnabled(not busy)
+        self.output_dir_auto_button.setEnabled(not busy)
+        if self.run_button is not None:
+            self.run_button.setEnabled(not busy)
+
+    def _prepare_run_progress(self, total_units: int) -> None:
+        self.run_progress_bar.setRange(0, max(1, total_units))
+        self.run_progress_bar.setValue(0)
+        self.run_progress_bar.setFormat(f"0/{max(1, total_units)}")
+        self.run_progress_label.setText(f"Running 0/{total_units} files...")
+
+    def _update_run_progress(self, completed: int, total: int, output_path: Path) -> None:
+        self.run_progress_bar.setRange(0, max(1, total))
+        self.run_progress_bar.setValue(min(completed, total))
+        self.run_progress_bar.setFormat(f"{completed}/{total}")
+        self.run_progress_label.setText(
+            f"Running {completed}/{total} files... Last: {output_path.name}"
+        )
+        QtWidgets.QApplication.processEvents()
+
+    def _set_run_progress_complete(self, completed: int, total: int) -> None:
+        self.run_progress_bar.setRange(0, max(1, total))
+        self.run_progress_bar.setValue(min(completed, total))
+        self.run_progress_bar.setFormat(f"{completed}/{total}")
+        self.run_progress_label.setText(f"Completed {completed}/{total} files.")
+
+    def _request_run_cancel(self) -> None:
+        if not self._run_busy:
+            return
+        self._run_cancel_requested = True
+        self.run_progress_label.setText("Cancelling run...")
+
+    def _run_should_cancel(self) -> bool:
+        QtWidgets.QApplication.processEvents()
+        return self._run_cancel_requested
+
     def _handle_import_stage(self) -> None:
         self.add_files_button.setFocus()
         self._set_workflow_message("Import: add files or folders to begin.")
@@ -1885,11 +2247,13 @@ class MainWindow(QtWidgets.QMainWindow):
     def _handle_stitch_stage(self) -> None:
         selected_paths = self._selected_input_paths()
         if len(selected_paths) < 2:
+            self._stitch_candidate_signature = None
             message = "Stitch: select at least two tiles to preview mosaic bounds."
             self._set_workflow_message(message)
             return
         suggestion = suggest_mosaic(selected_paths)
         preview_metadata = self._preview_stitch_metadata(selected_paths)
+        queued = self._queue_stitch_for_selection(selected_paths)
         if preview_metadata:
             self._set_metadata_placeholders()
             self._set_metadata(preview_metadata)
@@ -1899,6 +2263,8 @@ class MainWindow(QtWidgets.QMainWindow):
             message = "Stitch: stitch bounds previewed in metadata."
         else:
             message = "Stitch: no mosaic hints detected in selected tiles."
+        if queued:
+            message = f"{message} Stitching is queued for the next run."
         self._set_workflow_message(message)
 
     def _handle_recommend_stage(self) -> None:
@@ -1943,15 +2309,27 @@ class MainWindow(QtWidgets.QMainWindow):
         self._set_workflow_message(
             "Export: confirm the preset and output format before saving outputs."
         )
-        self._schedule_export_completion()
 
     def _handle_run_clicked(self) -> None:
         try:
             self._start_run()
+        except RunCancelledError:
+            self._set_workflow_message("Run: cancelled before completion.")
         except Exception as exc:  # noqa: BLE001
             self._show_error_dialog(exc, retry_action=self._handle_run_clicked)
 
     def _start_run(self) -> None:
+        if self._run_busy:
+            raise UserFacingError(
+                title="Run already in progress",
+                summary="A run is currently active.",
+                suggested_fixes=(
+                    "Wait for the current run to finish.",
+                    "Use Cancel run to stop it first.",
+                ),
+                error_code="RUN-001",
+                can_retry=True,
+            )
         selected_paths = self._selected_input_paths()
         if not selected_paths:
             raise UserFacingError(
@@ -1965,7 +2343,20 @@ class MainWindow(QtWidgets.QMainWindow):
                 can_retry=True,
             )
 
-        missing_paths = [path for path in selected_paths if not os.path.exists(path)]
+        resolved_paths = [str(path) for path in expand_input_paths(selected_paths)]
+        if not resolved_paths:
+            raise UserFacingError(
+                title="No supported inputs found",
+                summary="The selected folders do not contain supported imagery files.",
+                suggested_fixes=(
+                    "Add TIFF, JP2, PNG, or JPEG files to the selection.",
+                    "Select individual files instead of empty folders.",
+                ),
+                error_code="INPUT-002",
+                can_retry=True,
+            )
+
+        missing_paths = [path for path in resolved_paths if not os.path.exists(path)]
         if missing_paths:
             sample_paths = ", ".join(missing_paths[:3])
             if len(missing_paths) > 3:
@@ -1980,8 +2371,664 @@ class MainWindow(QtWidgets.QMainWindow):
                 error_code="IO-001",
                 can_retry=True,
             )
-        self.last_run_settings = self._current_run_settings()
-        self._schedule_run_completion()
+
+        self._run_cancel_requested = False
+        self._set_run_busy(True)
+        run_started_at = datetime.now(timezone.utc)
+        stitch_note: str | None = None
+        stitch_temp_dir: Path | None = None
+        try:
+            resolved_paths, stitch_note, stitch_temp_dir = self._maybe_apply_queued_stitch(
+                resolved_paths
+            )
+            dataset_infos = [analyze_dataset(path) for path in resolved_paths]
+            planned_units = self._planned_request_count(len(dataset_infos))
+            self._prepare_run_progress(planned_units)
+            grid_mode, grid_message = self._resolve_grid_strategy_for_run(dataset_infos)
+            self._validate_multispectral_models(dataset_infos)
+            output_message = self._apply_output_policy(dataset_infos)
+
+            self.last_run_settings = self._current_run_settings()
+            artifacts, execution_notes = self._execute_upscale_run(
+                dataset_infos, grid_mode=grid_mode
+            )
+            status_parts = [
+                message
+                for message in (stitch_note, grid_message, output_message)
+                if message
+            ]
+            if execution_notes:
+                status_parts.extend(execution_notes)
+            if artifacts:
+                output_dir = artifacts[0].master_output_path.parent
+                visual_exports = sum(
+                    1 for artifact in artifacts if artifact.visual_output_path is not None
+                )
+                if visual_exports > 0:
+                    status_parts.append(
+                        f"Processed {len(artifacts)} file(s) with {visual_exports} visual export(s)."
+                    )
+                else:
+                    status_parts.append(f"Processed {len(artifacts)} file(s).")
+                status_parts.append(f"Output folder: {output_dir}")
+                report_path = self._export_run_processing_report(
+                    dataset_infos,
+                    output_dir=output_dir,
+                    started_at=run_started_at,
+                    completed_at=datetime.now(timezone.utc),
+                )
+                if report_path is not None:
+                    status_parts.append(f"Report: {report_path.name}")
+            self._set_run_progress_complete(len(artifacts), planned_units)
+            if status_parts:
+                self._set_workflow_message(f"Run: {' '.join(status_parts)}")
+            self._schedule_run_completion()
+        except RunCancelledError:
+            completed = self.run_progress_bar.value()
+            total = self.run_progress_bar.maximum()
+            self.run_progress_bar.setFormat(f"{completed}/{total}")
+            self.run_progress_label.setText(f"Cancelled after {completed}/{total} files.")
+            raise
+        finally:
+            self._set_run_busy(False)
+            self._stitch_candidate_signature = None
+            if stitch_temp_dir is not None:
+                shutil.rmtree(stitch_temp_dir, ignore_errors=True)
+
+    def _queue_stitch_for_selection(self, selected_paths: list[str]) -> bool:
+        expanded = [str(path) for path in expand_input_paths(selected_paths)]
+        if len(expanded) < 2:
+            self._stitch_candidate_signature = None
+            return False
+        self._stitch_candidate_signature = self._path_signature(expanded)
+        return True
+
+    def _path_signature(self, paths: list[str]) -> tuple[str, ...]:
+        normalized: list[str] = []
+        for value in paths:
+            path = Path(value).expanduser()
+            try:
+                normalized.append(str(path.resolve()))
+            except OSError:
+                normalized.append(str(path))
+        return tuple(sorted(set(normalized)))
+
+    def _maybe_apply_queued_stitch(
+        self, resolved_paths: list[str]
+    ) -> tuple[list[str], str | None, Path | None]:
+        if len(resolved_paths) < 2:
+            return resolved_paths, None, None
+        if self._stitch_candidate_signature is None:
+            return resolved_paths, None, None
+        if self._path_signature(resolved_paths) != self._stitch_candidate_signature:
+            return resolved_paths, None, None
+
+        temp_dir = Path(tempfile.mkdtemp(prefix="satellite-upscale-stitch-"))
+        stitched_path = temp_dir / "stitched_input.tif"
+        try:
+            stitch_rasters(resolved_paths, str(stitched_path))
+        except ReprojectionNotSupportedError as exc:
+            raise UserFacingError(
+                title="Stitching requires reprojection",
+                summary="Selected tiles are on different CRS grids and cannot be stitched in v1.",
+                suggested_fixes=(
+                    "Select tiles with matching CRS and grid alignment.",
+                    "Run without Stitch, or choose Split by grid when prompted.",
+                ),
+                error_code="STITCH-001",
+                can_retry=True,
+            ) from exc
+        except Exception as exc:
+            raise UserFacingError(
+                title="Stitching failed",
+                summary="The selected tiles could not be stitched before run execution.",
+                suggested_fixes=(
+                    "Retry with fewer tiles to isolate the problematic input.",
+                    "Run without Stitch for this selection.",
+                ),
+                error_code="STITCH-002",
+                can_retry=True,
+            ) from exc
+
+        if not stitched_path.is_file():
+            raise UserFacingError(
+                title="Stitching failed",
+                summary="No stitched mosaic output was produced.",
+                suggested_fixes=(
+                    "Retry with the same tiles.",
+                    "Run without Stitch if the issue persists.",
+                ),
+                error_code="STITCH-003",
+                can_retry=True,
+            )
+
+        note = f"Stitched {len(resolved_paths)} tiles into one mosaic before upscaling."
+        return [str(stitched_path)], note, temp_dir
+
+    def _resolve_grid_strategy_for_run(
+        self, dataset_infos: list[DatasetInfo]
+    ) -> tuple[str, str | None]:
+        groups = group_by_grid(dataset_infos)
+        if len(groups) <= 1:
+            return "none", None
+
+        mode = self._prompt_grid_resolution_mode(groups)
+        if mode == "cancel":
+            raise UserFacingError(
+                title="Grid mismatch not resolved",
+                summary="Selected files use different grids and no processing mode was chosen.",
+                suggested_fixes=(
+                    "Choose Auto-reproject to align to the first selected grid.",
+                    "Choose Split by grid and confirm grouped processing.",
+                ),
+                error_code="GRID-001",
+                can_retry=True,
+            )
+        if mode == "split":
+            if not self._confirm_split_groups(groups):
+                raise UserFacingError(
+                    title="Split by grid cancelled",
+                    summary="Grid grouping was detected but split execution was not confirmed.",
+                    suggested_fixes=(
+                        "Review the grid groups and confirm split execution.",
+                        "Use Auto-reproject instead if you want one combined run.",
+                    ),
+                    error_code="GRID-002",
+                    can_retry=True,
+                )
+            return "split", f"Split into {len(groups)} grid groups (confirmed)."
+        return "reproject", "Auto-reproject selected (target: first selected grid)."
+
+    def _prompt_grid_resolution_mode(
+        self,
+        groups: dict[object, list[DatasetInfo]],
+    ) -> str:
+        summary = summarize_grid_groups(groups)
+        message_box = QtWidgets.QMessageBox(self)
+        message_box.setIcon(QtWidgets.QMessageBox.Icon.Warning)
+        message_box.setWindowTitle("Grid mismatch detected")
+        message_box.setText(
+            "Selected files are on different grids. Choose how to continue."
+        )
+        message_box.setInformativeText(summary)
+        auto_button = message_box.addButton(
+            "Auto-reproject",
+            QtWidgets.QMessageBox.ButtonRole.AcceptRole,
+        )
+        split_button = message_box.addButton(
+            "Split by grid",
+            QtWidgets.QMessageBox.ButtonRole.ActionRole,
+        )
+        cancel_button = message_box.addButton(
+            QtWidgets.QMessageBox.StandardButton.Cancel
+        )
+        message_box.setDefaultButton(auto_button)
+        message_box.exec()
+        clicked = message_box.clickedButton()
+        if clicked is auto_button:
+            return "reproject"
+        if clicked is split_button:
+            return "split"
+        if clicked is cancel_button:
+            return "cancel"
+        return "cancel"
+
+    def _confirm_split_groups(self, groups: dict[object, list[DatasetInfo]]) -> bool:
+        summary = summarize_grid_groups(groups)
+        response = QtWidgets.QMessageBox.question(
+            self,
+            "Confirm split by grid",
+            (
+                "The run will be split into sequential grid-specific groups.\n\n"
+                f"{summary}\n\n"
+                "Continue?"
+            ),
+            QtWidgets.QMessageBox.StandardButton.Yes
+            | QtWidgets.QMessageBox.StandardButton.No,
+            QtWidgets.QMessageBox.StandardButton.Yes,
+        )
+        return response == QtWidgets.QMessageBox.StandardButton.Yes
+
+    def _validate_multispectral_models(self, dataset_infos: list[DatasetInfo]) -> None:
+        models = self._run_models_for_validation()
+        if not models:
+            return
+
+        for info in dataset_infos:
+            if info.band_count is None or info.band_count <= 3:
+                continue
+            provider = info.provider
+            for model_name in models:
+                if model_supports_dataset(
+                    model_name,
+                    provider,
+                    info.band_count,
+                    band_support=self._model_band_support,
+                ):
+                    continue
+                provider_text = provider or "unknown provider"
+                raise UserFacingError(
+                    title="Model is not multispectral-compatible",
+                    summary=(
+                        f"Model '{model_name}' is not marked as compatible with "
+                        f"{provider_text} multispectral inputs."
+                    ),
+                    suggested_fixes=(
+                        "Choose a model that explicitly supports this provider/band profile.",
+                        "Switch to standard mode for provider-based model recommendation.",
+                    ),
+                    error_code="MODEL-012",
+                    can_retry=True,
+                )
+
+    def _run_models_for_validation(self) -> list[str]:
+        if not self.model_comparison_panel.is_comparison_mode():
+            return []
+        models: list[str] = []
+        model_a = self.model_comparison_panel.selected_model_a()
+        model_b = self.model_comparison_panel.selected_model_b()
+        if model_a:
+            models.append(model_a)
+        if model_b and model_b not in models:
+            models.append(model_b)
+        return models
+
+    def _planned_request_count(self, dataset_count: int) -> int:
+        if dataset_count <= 0:
+            return 1
+        if not self.model_comparison_panel.is_comparison_mode():
+            return dataset_count
+        comparison_models = self._run_models_for_validation()
+        return max(1, len(comparison_models))
+
+    def _apply_output_policy(self, dataset_infos: list[DatasetInfo]) -> str | None:
+        requested_format = self.export_presets_panel.selected_output_format()
+        warnings: list[str] = []
+        notes: list[str] = []
+        output_plans: dict[Path, OutputPlan] = {}
+        rgb_mappings: dict[Path, RgbBandMapping] = {}
+
+        for info in dataset_infos:
+            plan = build_output_plan(info.format_label, requested_format)
+            output_plans[info.path] = plan
+            warnings.extend(plan.critical_warnings)
+            if plan.visual_format:
+                notes.append(
+                    f"Dual output enabled ({plan.master_format} master + {plan.visual_format} visual)."
+                )
+                if info.band_count is not None and info.band_count > 3:
+                    mapping = self._resolve_rgb_mapping_for_dataset(info)
+                    rgb_mappings[info.path] = mapping
+                    notes.append(
+                        (
+                            "Visual RGB mapping: "
+                            f"R{mapping.red + 1}/G{mapping.green + 1}/B{mapping.blue + 1}"
+                        )
+                    )
+            missing_fields = info.preservation_gaps()
+            if missing_fields:
+                warnings.append(
+                    f"{info.path.name}: unable to verify preservation fields ({', '.join(missing_fields)})."
+                )
+
+        if warnings:
+            self._show_critical_warnings(warnings)
+        self._run_output_plans = output_plans
+        self._run_rgb_mappings = rgb_mappings
+        if not notes:
+            return None
+        return " ".join(notes)
+
+    def _execute_upscale_run(
+        self,
+        dataset_infos: list[DatasetInfo],
+        *,
+        grid_mode: str,
+    ) -> tuple[list[UpscaleArtifact], list[str]]:
+        if not dataset_infos:
+            return [], []
+        settings = self.last_run_settings or self._current_run_settings()
+        band_handling = self.export_presets_panel.selected_band_handling()
+        output_dir = self._resolve_run_output_dir([info.path for info in dataset_infos])
+        target_grid = (
+            dataset_infos[0].grid if grid_mode == "reproject" and dataset_infos else None
+        )
+        hardware = detect_hardware_profile()
+        cache_dir = self.model_manager_panel.model_cache_dir()
+        warnings: list[str] = []
+
+        requests: list[UpscaleRequest] = []
+        self._last_run_models = []
+        if self.model_comparison_panel.is_comparison_mode():
+            if len(dataset_infos) != 1:
+                raise UserFacingError(
+                    title="Model comparison requires one input",
+                    summary="Model comparison mode only supports a single input image.",
+                    suggested_fixes=(
+                        "Select exactly one image for comparison mode.",
+                        "Switch to standard mode for multi-file runs.",
+                    ),
+                    error_code="RUN-004",
+                    can_retry=True,
+                )
+            comparison_models = self._run_models_for_validation()
+            if not comparison_models:
+                raise UserFacingError(
+                    title="No comparison model selected",
+                    summary="Choose at least one model in comparison mode before running.",
+                    suggested_fixes=(
+                        "Select Model A and retry.",
+                        "Switch to standard mode if you do not need side-by-side comparison.",
+                    ),
+                    error_code="RUN-005",
+                    can_retry=True,
+                )
+            info = dataset_infos[0]
+            plan = self._run_output_plans.get(info.path)
+            if plan is None:
+                plan = build_output_plan(
+                    info.format_label,
+                    self.export_presets_panel.selected_output_format(),
+                )
+            mapping = self._run_rgb_mappings.get(info.path)
+            for index, model_name in enumerate(comparison_models, start=1):
+                execution_plan = recommend_execution_plan(
+                    info,
+                    hardware,
+                    model_override=model_name,
+                    scale_override=settings.scale,
+                    tiling_override=settings.tiling,
+                    precision_override=settings.precision,
+                    compute_override=settings.compute,
+                    safe_mode=settings.safe_mode,
+                )
+                self._ensure_model_support_for_dataset(info, execution_plan.model)
+                self._last_run_models.append(execution_plan.model)
+                warnings.extend(execution_plan.warnings)
+                request = UpscaleRequest(
+                    input_path=info.path,
+                    output_plan=plan,
+                    scale=execution_plan.scale,
+                    band_handling=band_handling,
+                    rgb_mapping=mapping,
+                    reproject_to=target_grid if grid_mode == "reproject" else None,
+                    model_name=execution_plan.model,
+                    model_version="Latest",
+                    model_cache_dir=cache_dir,
+                    tiling=execution_plan.tiling,
+                    precision=execution_plan.precision,
+                    compute=execution_plan.compute,
+                    output_tag=f"compare-{index}-{_slugify_label(model_name)}",
+                )
+                requests.append(request)
+        else:
+            for info in dataset_infos:
+                plan = self._run_output_plans.get(info.path)
+                if plan is None:
+                    plan = build_output_plan(
+                        info.format_label,
+                        self.export_presets_panel.selected_output_format(),
+                    )
+                mapping = self._run_rgb_mappings.get(info.path)
+                execution_plan = recommend_execution_plan(
+                    info,
+                    hardware,
+                    scale_override=settings.scale,
+                    tiling_override=settings.tiling,
+                    precision_override=settings.precision,
+                    compute_override=settings.compute,
+                    safe_mode=settings.safe_mode,
+                )
+                self._ensure_model_support_for_dataset(info, execution_plan.model)
+                self._last_run_models.append(execution_plan.model)
+                warnings.extend(execution_plan.warnings)
+                request = UpscaleRequest(
+                    input_path=info.path,
+                    output_plan=plan,
+                    scale=execution_plan.scale,
+                    band_handling=band_handling,
+                    rgb_mapping=mapping,
+                    reproject_to=target_grid if grid_mode == "reproject" else None,
+                    model_name=execution_plan.model,
+                    model_version="Latest",
+                    model_cache_dir=cache_dir,
+                    tiling=execution_plan.tiling,
+                    precision=execution_plan.precision,
+                    compute=execution_plan.compute,
+                )
+                requests.append(request)
+
+        artifacts = run_upscale_batch(
+            requests,
+            output_dir=output_dir,
+            on_progress=self._update_run_progress,
+            should_cancel=self._run_should_cancel,
+        )
+        if artifacts:
+            if self.model_comparison_panel.is_comparison_mode():
+                self._update_comparison_preview_from_artifacts(artifacts)
+            else:
+                self._update_after_preview_from_artifact(artifacts[0])
+        return artifacts, _summarize_run_warnings(warnings)
+
+    def _export_run_processing_report(
+        self,
+        dataset_infos: list[DatasetInfo],
+        *,
+        output_dir: Path,
+        started_at: datetime,
+        completed_at: datetime,
+    ) -> Path | None:
+        model_name = self._resolve_primary_model_for_report(dataset_infos)
+        settings = self.last_run_settings or self._current_run_settings()
+        try:
+            timings = ProcessingTimings.from_datetimes(started_at, completed_at)
+            report = build_processing_report(
+                export_settings=self.export_presets_panel.export_settings(),
+                model_name=model_name,
+                timings=timings,
+                scale=settings.scale,
+                tiling=settings.tiling,
+                precision=settings.precision,
+                compute=settings.compute,
+            )
+            report_path = output_dir / "processing_report.json"
+            export_processing_report(report, report_path)
+            return report_path
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _resolve_primary_model_for_report(self, dataset_infos: list[DatasetInfo]) -> str:
+        if self._last_run_models:
+            return self._last_run_models[0]
+        selected_models = self._run_models_for_validation()
+        if selected_models:
+            return selected_models[0]
+        if dataset_infos:
+            first = dataset_infos[0]
+            if first.provider == "Sentinel-2" and (first.band_count or 0) > 3:
+                return "S2DR3"
+            if first.provider in {"PlanetScope", "Vantor", "21AT"} and (first.band_count or 0) > 3:
+                return "SRGAN adapted to EO"
+            if first.provider == "Landsat" and (first.band_count or 0) > 3:
+                return "LDSR-S2"
+            if (first.band_count or 0) > 3:
+                return "SRGAN adapted to EO"
+        return "Real-ESRGAN"
+
+    def _ensure_model_support_for_dataset(self, info: DatasetInfo, model_name: str) -> None:
+        band_count = info.band_count
+        if band_count is None or band_count <= 3:
+            return
+        if model_supports_dataset(
+            model_name,
+            info.provider,
+            band_count,
+            band_support=self._model_band_support,
+        ):
+            return
+        provider_text = info.provider or "unknown provider"
+        raise UserFacingError(
+            title="Model is not multispectral-compatible",
+            summary=(
+                f"Model '{model_name}' is not marked as compatible with "
+                f"{provider_text} multispectral inputs."
+            ),
+            suggested_fixes=(
+                "Choose a model that explicitly supports this provider/band profile.",
+                "Switch to standard mode for provider-based model recommendation.",
+            ),
+            error_code="MODEL-012",
+            can_retry=True,
+        )
+
+    def _update_comparison_preview_from_artifacts(
+        self, artifacts: list[UpscaleArtifact]
+    ) -> None:
+        first_artifact = artifacts[0]
+        first_path = first_artifact.visual_output_path or first_artifact.master_output_path
+        first_image = self._read_image(str(first_path))
+        if first_image is not None:
+            self.comparison_viewer.set_before_image(first_image)
+        else:
+            self.comparison_viewer.set_before_placeholder(
+                f"Model output saved to {first_path.name}."
+            )
+
+        if len(artifacts) == 1:
+            self.comparison_viewer.set_after_placeholder("Select a second model to compare.")
+            return
+
+        second_artifact = artifacts[1]
+        second_path = second_artifact.visual_output_path or second_artifact.master_output_path
+        second_image = self._read_image(str(second_path))
+        if second_image is not None:
+            self.comparison_viewer.set_after_image(second_image)
+        else:
+            self.comparison_viewer.set_after_placeholder(
+                f"Model output saved to {second_path.name}."
+            )
+
+    def _resolve_run_output_dir(self, input_paths: list[Path]) -> Path:
+        selected = self._selected_output_dir()
+        if selected is not None:
+            return selected
+        anchor = input_paths[0]
+        if anchor.is_file():
+            base = anchor.parent
+        elif anchor.is_dir():
+            base = anchor
+        else:
+            base = Path.cwd()
+        return base / "upscaled_output"
+
+    def _update_after_preview_from_artifact(self, artifact: UpscaleArtifact) -> None:
+        preview_path = artifact.visual_output_path or artifact.master_output_path
+        image = self._read_image(str(preview_path))
+        if image is not None:
+            self.comparison_viewer.set_after_image(image)
+            return
+        self.comparison_viewer.set_after_placeholder(
+            f"Run finished. Output saved to {preview_path.name}."
+        )
+
+    def _resolve_rgb_mapping_for_dataset(self, info: DatasetInfo) -> RgbBandMapping:
+        if info.band_count is None or info.band_count <= 0:
+            raise UserFacingError(
+                title="Band mapping unavailable",
+                summary="The selected file does not expose a readable band count.",
+                suggested_fixes=(
+                    "Use a raster with readable band metadata.",
+                    "Choose a preservation-safe output only.",
+                ),
+                error_code="BAND-001",
+                can_retry=True,
+            )
+        provider = info.provider or "Unknown"
+        sensor = info.sensor or "Unknown"
+        saved = self._band_profile_store.load_mapping(provider, sensor)
+        if saved and self._mapping_is_valid(saved, info.band_count):
+            return saved
+
+        default_mapping = default_rgb_mapping(provider, info.band_count)
+        if default_mapping and self._mapping_is_valid(default_mapping, info.band_count):
+            self._band_profile_store.save_mapping(provider, sensor, default_mapping)
+            return default_mapping
+
+        prompted = self._prompt_for_rgb_band_mapping(info)
+        if prompted is None:
+            raise UserFacingError(
+                title="Band mapping required",
+                summary="RGB mapping was not selected for this multispectral visual export.",
+                suggested_fixes=(
+                    "Provide a band mapping in the prompt and retry.",
+                    "Choose a geospatial-only output to skip visual RGB export.",
+                ),
+                error_code="BAND-002",
+                can_retry=True,
+            )
+        self._band_profile_store.save_mapping(provider, sensor, prompted)
+        return prompted
+
+    def _mapping_is_valid(self, mapping: RgbBandMapping, band_count: int) -> bool:
+        return all(
+            0 <= index < band_count
+            for index in (mapping.red, mapping.green, mapping.blue)
+        )
+
+    def _prompt_for_rgb_band_mapping(self, info: DatasetInfo) -> RgbBandMapping | None:
+        assert info.band_count is not None
+        choices = [f"Band {index + 1}" for index in range(info.band_count)]
+        provider = info.provider or "Unknown provider"
+        sensor = info.sensor or "Unknown sensor"
+        prompt = (
+            f"Provider: {provider}\nSensor: {sensor}\n\n"
+            "Map RGB bands for visual export."
+        )
+        red_label, accepted = QtWidgets.QInputDialog.getItem(
+            self,
+            "Map Red band",
+            prompt,
+            choices,
+            0,
+            False,
+        )
+        if not accepted:
+            return None
+        green_label, accepted = QtWidgets.QInputDialog.getItem(
+            self,
+            "Map Green band",
+            prompt,
+            choices,
+            1 if len(choices) > 1 else 0,
+            False,
+        )
+        if not accepted:
+            return None
+        blue_label, accepted = QtWidgets.QInputDialog.getItem(
+            self,
+            "Map Blue band",
+            prompt,
+            choices,
+            2 if len(choices) > 2 else 0,
+            False,
+        )
+        if not accepted:
+            return None
+        return RgbBandMapping(
+            red=choices.index(red_label),
+            green=choices.index(green_label),
+            blue=choices.index(blue_label),
+            source="user mapping",
+        )
+
+    def _show_critical_warnings(self, warnings: list[str]) -> None:
+        unique = list(dict.fromkeys(warnings))
+        QtWidgets.QMessageBox.warning(
+            self,
+            "Critical preservation warning",
+            "\n".join(unique),
+        )
 
     def _selected_input_paths(self) -> list[str]:
         paths = [item.text() for item in self.input_list.selectedItems()]
@@ -2040,6 +3087,12 @@ class MainWindow(QtWidgets.QMainWindow):
                 break
 
     def _restore_session_if_needed(self) -> None:
+        if os.environ.get("SATELLITE_UPSCALE_DISABLE_SESSION_RESTORE") == "1":
+            return
+        if "PYTEST_CURRENT_TEST" in os.environ and not os.environ.get(
+            "SAT_UPSCALE_SESSION_PATH"
+        ):
+            return
         state = self._session_store.load()
         if not state.dirty:
             return
@@ -2219,6 +3272,7 @@ class MainWindow(QtWidgets.QMainWindow):
         super().closeEvent(event)
 
     def _handle_selection_change(self) -> None:
+        self._stitch_candidate_signature = None
         selected_paths = self._selected_input_paths()
         self._set_batch_mode(len(selected_paths) > 1)
         items = self.input_list.selectedItems()
@@ -2372,6 +3426,15 @@ class MainWindow(QtWidgets.QMainWindow):
             "Path": info.absoluteFilePath() or path,
             "File size": _format_bytes(info.size()),
             "Modified": info.lastModified().toString(QtCore.Qt.DateFormat.ISODate) or "Unknown",
+            "Provider": "Unknown",
+            "Sensor": "Unknown",
+            "Acquisition time": "Unknown",
+            "Scene ID": "Unknown",
+            "Band count": "Unknown",
+            "Data type": "Unknown",
+            "NoData": "Unknown",
+            "CRS": "Unknown",
+            "Pixel size": "Unknown",
         }
         reader = QtGui.QImageReader(path)
         fmt_text = None
@@ -2396,15 +3459,36 @@ class MainWindow(QtWidgets.QMainWindow):
             dimensions = "Unknown"
         metadata["Format"] = fmt_text or "Unknown"
         metadata["Dimensions"] = dimensions
+
+        try:
+            dataset = analyze_dataset(path)
+        except Exception:  # noqa: BLE001
+            dataset = None
+        if dataset is not None:
+            metadata["Provider"] = dataset.provider or "Unknown"
+            metadata["Sensor"] = dataset.sensor or "Unknown"
+            metadata["Acquisition time"] = dataset.acquisition_time or "Unknown"
+            metadata["Scene ID"] = dataset.scene_id or "Unknown"
+            metadata["Band count"] = (
+                str(dataset.band_count) if dataset.band_count is not None else "Unknown"
+            )
+            metadata["Data type"] = dataset.dtype or "Unknown"
+            metadata["NoData"] = (
+                str(dataset.nodata) if dataset.nodata is not None else "Unknown"
+            )
+            if dataset.grid is not None:
+                metadata["CRS"] = dataset.grid.crs or "Unknown"
+                metadata["Pixel size"] = _format_pixel_size(dataset.grid.transform)
+
         return metadata
 
     def _set_metadata_placeholders(self) -> None:
         for label in self.metadata_value_labels.values():
-            label.setText("—")
+            label.setText("-")
 
     def _set_metadata(self, metadata: dict[str, str]) -> None:
         for field, label in self.metadata_value_labels.items():
-            label.setText(metadata.get(field, "—"))
+            label.setText(metadata.get(field, "-"))
 
 
 def create_app() -> QtWidgets.QApplication:

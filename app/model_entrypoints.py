@@ -6,12 +6,16 @@ from app.model_wrapper import ModelWrapper
 
 
 _ENTRYPOINTS: dict[str, str] = {
+    "Satlas": str(Path(__file__).resolve().parent / "model_wrappers" / "satlas_wrapper.py"),
     "SatelliteSR": str(
         Path(__file__).resolve().parent / "model_wrappers" / "satellitesr_wrapper.py"
     ),
     "SwinIR": str(Path(__file__).resolve().parent / "model_wrappers" / "swinir_wrapper.py"),
     "Swin2SR": str(
         Path(__file__).resolve().parent / "model_wrappers" / "swin2sr_wrapper.py"
+    ),
+    "Swin2-MoSE": str(
+        Path(__file__).resolve().parent / "model_wrappers" / "swin2_mose_wrapper.py"
     ),
     "HAT": str(Path(__file__).resolve().parent / "model_wrappers" / "hat_wrapper.py"),
     "SRGAN adapted to EO": str(
@@ -27,6 +31,10 @@ _ENTRYPOINTS: dict[str, str] = {
     "MRDAM": str(Path(__file__).resolve().parent / "model_wrappers" / "mrdam_wrapper.py"),
     "SenGLEAN": str(
         Path(__file__).resolve().parent / "model_wrappers" / "senglean_wrapper.py"
+    ),
+    "DSen2": str(Path(__file__).resolve().parent / "model_wrappers" / "dsen2_wrapper.py"),
+    "EVOLAND Sentinel-2 SR": str(
+        Path(__file__).resolve().parent / "model_wrappers" / "evoland_s2_wrapper.py"
     ),
 }
 

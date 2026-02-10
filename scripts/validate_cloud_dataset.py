@@ -5,12 +5,24 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import sys
+
+if __package__ in {None, ""}:
+    _REPO_ROOT = Path(__file__).resolve().parents[1]
+    if str(_REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(_REPO_ROOT))
 
 from app.validation import (
     evaluate_dataset,
     load_samples_from_manifest,
     report_to_dict,
     write_preview_ppm,
+)
+from app.validation_baselines import (
+    evaluate_threshold,
+    load_validation_baselines,
+    resolve_threshold,
+    threshold_to_dict,
 )
 
 
@@ -52,6 +64,17 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Skip generating preview images.",
     )
+    parser.add_argument(
+        "--baseline",
+        type=Path,
+        default=Path(__file__).resolve().parent / "sample_data" / "validation_baselines.json",
+        help="Baseline threshold JSON file.",
+    )
+    parser.add_argument(
+        "--fail-on-threshold",
+        action="store_true",
+        help="Exit with code 2 if metrics do not meet threshold.",
+    )
     return parser.parse_args()
 
 
@@ -77,7 +100,18 @@ def main() -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     report_path = output_dir / "report.json"
-    report_path.write_text(json.dumps(report_to_dict(report), indent=2), encoding="utf-8")
+    payload = report_to_dict(report)
+    threshold = resolve_threshold(
+        load_validation_baselines(args.baseline),
+        dataset="clouds",
+    )
+    if threshold is not None:
+        result = evaluate_threshold(report, threshold)
+        payload["threshold"] = threshold_to_dict(threshold, result)
+        if args.fail_on_threshold and not result.passed:
+            report_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            return 2
+    report_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     if not args.skip_previews:
         bands = _parse_bands(args.bands)

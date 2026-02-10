@@ -1,4 +1,6 @@
 import os
+from pathlib import Path
+import tempfile
 import unittest
 from unittest import mock
 
@@ -82,6 +84,64 @@ class TestWorkflowStageActions(unittest.TestCase):
             window.metadata_value_labels["Tile boundaries"].text(),
             "rows=0, 1; cols=0, 1, 2",
         )
+
+    def test_stitch_stage_queues_stitch_for_next_run(self) -> None:
+        from app.ui import MainWindow
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            first = Path(tmpdir) / "scene_r0_c0.tif"
+            second = Path(tmpdir) / "scene_r0_c1.tif"
+            first.write_bytes(b"fake-a")
+            second.write_bytes(b"fake-b")
+            window = MainWindow()
+            window.input_list.add_paths([str(first), str(second)])
+            with QtCore.QSignalBlocker(window.input_list):
+                window.input_list.setCurrentRow(
+                    0, QtCore.QItemSelectionModel.SelectionFlag.Select
+                )
+                window.input_list.setCurrentRow(
+                    1, QtCore.QItemSelectionModel.SelectionFlag.Select
+                )
+
+            window.workflow_stage_actions[2].click()
+            QtWidgets.QApplication.processEvents()
+
+            self.assertIn("queued for the next run", window.status_bar.currentMessage())
+
+    def test_stitch_queue_is_applied_during_run(self) -> None:
+        from app.ui import MainWindow
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            first = Path(tmpdir) / "scene_r0_c0.tif"
+            second = Path(tmpdir) / "scene_r0_c1.tif"
+            output_dir = Path(tmpdir) / "out"
+            first.write_bytes(b"fake-a")
+            second.write_bytes(b"fake-b")
+
+            window = MainWindow()
+            window.input_list.add_paths([str(first), str(second)])
+            with QtCore.QSignalBlocker(window.input_list):
+                window.input_list.setCurrentRow(
+                    0, QtCore.QItemSelectionModel.SelectionFlag.Select
+                )
+                window.input_list.setCurrentRow(
+                    1, QtCore.QItemSelectionModel.SelectionFlag.Select
+                )
+            window.output_dir_input.setText(str(output_dir))
+            window.workflow_stage_actions[2].click()
+            QtWidgets.QApplication.processEvents()
+
+            def fake_stitch(paths: list[str], stitched_output: str, **_kwargs: object) -> str:
+                self.assertEqual(len(paths), 2)
+                Path(stitched_output).write_bytes(b"stitched")
+                return stitched_output
+
+            with mock.patch("app.ui.stitch_rasters", side_effect=fake_stitch) as stitch:
+                window._start_run()
+                QtWidgets.QApplication.processEvents()
+
+            self.assertTrue(stitch.called)
+            self.assertIn("Stitched 2 tiles into one mosaic", window.status_bar.currentMessage())
 
     def test_recommend_stage_updates_preset(self) -> None:
         from app.ui import MainWindow

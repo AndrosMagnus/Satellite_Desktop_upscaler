@@ -1,0 +1,32 @@
+{
+  "datasets": {
+    "sentinel2": {
+      "default": {
+        "psnr_min": 28.5,
+        "ssim_min": 0.86
+      }
+    },
+    "eo": {
+      "default": {
+        "psnr_min": 27.0,
+        "ssim_min": 0.82
+      },
+      "models": {
+        "SatelliteSR": {
+          "psnr_min": 27.5,
+          "ssim_min": 0.83
+        },
+        "SRGAN adapted to EO": {
+          "psnr_min": 26.5,
+          "ssim_min": 0.81
+        }
+      }
+    },
+    "clouds": {
+      "default": {
+        "psnr_min": 26.0,
+        "ssim_min": 0.78
+      }
+    }
+  }
+}

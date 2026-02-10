@@ -23,6 +23,12 @@ class TestModelEntrypoints(unittest.TestCase):
         path = Path(entrypoint)
         self.assertTrue(path.is_file(), "SatelliteSR entrypoint must exist on disk")
 
+    def test_satlas_entrypoint_resolves(self) -> None:
+        entrypoint = resolve_model_entrypoint("Satlas")
+        self.assertIsNotNone(entrypoint, "Satlas entrypoint must be registered")
+        path = Path(entrypoint)
+        self.assertTrue(path.is_file(), "Satlas entrypoint must exist on disk")
+
     def test_srgan_eo_entrypoint_resolves(self) -> None:
         entrypoint = resolve_model_entrypoint("SRGAN adapted to EO")
         self.assertIsNotNone(entrypoint, "SRGAN adapted to EO entrypoint must be registered")
@@ -48,7 +54,13 @@ class TestModelEntrypoints(unittest.TestCase):
         self.assertTrue(path.is_file(), "HAT entrypoint must exist on disk")
 
     def test_s2_entrypoints_resolve(self) -> None:
-        for model_name in ("S2DR3", "SEN2SR", "LDSR-S2"):
+        for model_name in (
+            "S2DR3",
+            "SEN2SR",
+            "LDSR-S2",
+            "DSen2",
+            "EVOLAND Sentinel-2 SR",
+        ):
             entrypoint = resolve_model_entrypoint(model_name)
             self.assertIsNotNone(entrypoint, f"{model_name} entrypoint must be registered")
             path = Path(entrypoint)
@@ -66,6 +78,12 @@ class TestModelEntrypoints(unittest.TestCase):
         path = Path(entrypoint)
         self.assertTrue(path.is_file(), "SenGLEAN entrypoint must exist on disk")
 
+    def test_swin2_mose_entrypoint_resolves(self) -> None:
+        entrypoint = resolve_model_entrypoint("Swin2-MoSE")
+        self.assertIsNotNone(entrypoint, "Swin2-MoSE entrypoint must be registered")
+        path = Path(entrypoint)
+        self.assertTrue(path.is_file(), "Swin2-MoSE entrypoint must exist on disk")
+
     def test_build_model_wrapper_uses_entrypoint(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             base_dir = Path(tmpdir)
@@ -77,6 +95,20 @@ class TestModelEntrypoints(unittest.TestCase):
 
             wrapper = build_model_wrapper("SatelliteSR", "v1", base_dir=base_dir)
             self.assertEqual(wrapper.name, "SatelliteSR")
+            self.assertEqual(wrapper.version, "v1")
+            self.assertTrue(Path(wrapper.entrypoint).is_file())
+
+    def test_build_satlas_wrapper_uses_entrypoint(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base_dir = Path(tmpdir)
+            paths = resolve_install_paths("Satlas", "v1", base_dir=base_dir)
+            paths.root.mkdir(parents=True, exist_ok=True)
+            paths.manifest.write_text("{}", encoding="utf-8")
+            paths.weights.write_bytes(b"weights")
+            self._create_venv(paths.venv)
+
+            wrapper = build_model_wrapper("Satlas", "v1", base_dir=base_dir)
+            self.assertEqual(wrapper.name, "Satlas")
             self.assertEqual(wrapper.version, "v1")
             self.assertTrue(Path(wrapper.entrypoint).is_file())
 
@@ -139,7 +171,7 @@ class TestModelEntrypoints(unittest.TestCase):
     def test_build_s2_wrapper_uses_entrypoint(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             base_dir = Path(tmpdir)
-            for model_name in ("S2DR3", "LDSR-S2"):
+            for model_name in ("S2DR3", "LDSR-S2", "DSen2", "EVOLAND Sentinel-2 SR"):
                 paths = resolve_install_paths(model_name, "v1", base_dir=base_dir)
                 paths.root.mkdir(parents=True, exist_ok=True)
                 paths.manifest.write_text("{}", encoding="utf-8")
@@ -150,6 +182,20 @@ class TestModelEntrypoints(unittest.TestCase):
                 self.assertEqual(wrapper.name, model_name)
                 self.assertEqual(wrapper.version, "v1")
                 self.assertTrue(Path(wrapper.entrypoint).is_file())
+
+    def test_build_swin2_mose_wrapper_uses_entrypoint(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base_dir = Path(tmpdir)
+            paths = resolve_install_paths("Swin2-MoSE", "v1", base_dir=base_dir)
+            paths.root.mkdir(parents=True, exist_ok=True)
+            paths.manifest.write_text("{}", encoding="utf-8")
+            paths.weights.write_bytes(b"weights")
+            self._create_venv(paths.venv)
+
+            wrapper = build_model_wrapper("Swin2-MoSE", "v1", base_dir=base_dir)
+            self.assertEqual(wrapper.name, "Swin2-MoSE")
+            self.assertEqual(wrapper.version, "v1")
+            self.assertTrue(Path(wrapper.entrypoint).is_file())
 
     def test_build_mrdam_wrapper_uses_entrypoint(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

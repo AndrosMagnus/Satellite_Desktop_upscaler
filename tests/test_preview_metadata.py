@@ -30,7 +30,7 @@ class TestPreviewAndMetadata(unittest.TestCase):
             self.assertTrue(image.save(image_path))
 
             window.input_list.add_paths([image_path])
-            window.input_list.setCurrentRow(0)
+            self._select_input_path(window, image_path)
             QtWidgets.QApplication.processEvents()
 
             pixmap = window.comparison_viewer.side_by_side.before_viewer.pixmap()
@@ -41,6 +41,11 @@ class TestPreviewAndMetadata(unittest.TestCase):
             self.assertEqual(metadata_values["Filename"].text(), "sample.png")
             self.assertEqual(metadata_values["Format"].text(), "PNG")
             self.assertEqual(metadata_values["Dimensions"].text(), "24 x 18 px")
+            self.assertIn("Band count", metadata_values)
+            self.assertIn("CRS", metadata_values)
+            self.assertIn("Acquisition time", metadata_values)
+            self.assertIn("Scene ID", metadata_values)
+            self.assertTrue(metadata_values["Provider"].text())
             self.assertIn("B", metadata_values["File size"].text())
             self.assertTrue(metadata_values["Modified"].text())
 
@@ -54,7 +59,7 @@ class TestPreviewAndMetadata(unittest.TestCase):
                 handle.write("hello")
 
             window.input_list.add_paths([text_path])
-            window.input_list.setCurrentRow(0)
+            self._select_input_path(window, text_path)
             QtWidgets.QApplication.processEvents()
 
             self.assertEqual(window.metadata_value_labels["Format"].text(), "Not an image")
@@ -81,11 +86,23 @@ class TestPreviewAndMetadata(unittest.TestCase):
                 handle.write(png_header)
 
             window.input_list.add_paths([header_path])
-            window.input_list.setCurrentRow(0)
+            self._select_input_path(window, header_path)
             QtWidgets.QApplication.processEvents()
 
             self.assertEqual(window.metadata_value_labels["Format"].text(), "PNG")
             self.assertEqual(window.metadata_value_labels["Dimensions"].text(), "10 x 6 px")
+
+    def _select_input_path(self, window: "QtWidgets.QMainWindow", path: str) -> None:
+        window.input_list.clearSelection()
+        for index in range(window.input_list.count()):
+            item = window.input_list.item(index)
+            if item is None:
+                continue
+            if item.text() == path:
+                item.setSelected(True)
+                window.input_list.setCurrentRow(index)
+                return
+        self.fail(f"Expected input path not found in list: {path}")
 
 
 if __name__ == "__main__":
