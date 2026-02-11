@@ -14,6 +14,7 @@ jobs:
   build-sign-attest:
     name: ${{ matrix.platform }} release artifact
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.optional }}
     permissions:
       contents: write
       id-token: write
@@ -24,10 +25,13 @@ jobs:
         include:
           - os: windows-latest
             platform: windows
-          - os: macos-13
+            optional: false
+          - os: macos-latest
             platform: macos
+            optional: true
           - os: ubuntu-22.04
             platform: linux
+            optional: false
 
     steps:
       - name: Checkout
