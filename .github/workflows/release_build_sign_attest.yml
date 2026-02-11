@@ -143,6 +143,21 @@ jobs:
             dist/SHA256SUMS-${{ matrix.platform }}.txt
             dist/*.sigstore.json
 
+  attach-release-assets:
+    name: attach release assets
+    if: github.event_name == 'release' || github.event.inputs.release_tag != ''
+    needs: build-sign-attest
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download workflow artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+
       - name: Resolve release tag
         id: release_tag
         shell: bash
@@ -153,12 +168,17 @@ jobs:
             echo "tag=${{ github.event.inputs.release_tag }}" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: List downloadable assets
+        shell: bash
+        run: |
+          ls -lah dist
+
       - name: Attach assets to GitHub Release
-        if: github.event_name == 'release' || github.event.inputs.release_tag != ''
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.release_tag.outputs.tag }}
           files: |
-            dist/SatelliteUpscale-${{ matrix.platform }}*
-            dist/SHA256SUMS-${{ matrix.platform }}.txt
+            dist/SatelliteUpscale-*
+            dist/SHA256SUMS-*.txt
             dist/*.sigstore.json
+          fail_on_unmatched_files: false
