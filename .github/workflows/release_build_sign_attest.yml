@@ -4,6 +4,11 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Existing release tag to attach assets to (for manual reruns)."
+        required: false
+        type: string
 
 jobs:
   build-sign-attest:
@@ -66,7 +71,11 @@ jobs:
         if: matrix.platform == 'macos'
         shell: bash
         run: |
-          ditto -c -k --sequesterRsrc --keepParent dist/SatelliteUpscale.app dist/SatelliteUpscale-macos.zip
+          if [ -d "dist/SatelliteUpscale.app" ]; then
+            ditto -c -k --sequesterRsrc --keepParent dist/SatelliteUpscale.app dist/SatelliteUpscale-macos.zip
+          else
+            ditto -c -k --keepParent dist/SatelliteUpscale dist/SatelliteUpscale-macos.zip
+          fi
 
       - name: Archive Linux bundle
         if: matrix.platform == 'linux'
@@ -130,10 +139,21 @@ jobs:
             dist/SHA256SUMS-${{ matrix.platform }}.txt
             dist/*.sigstore.json
 
+      - name: Resolve release tag
+        id: release_tag
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo "tag=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ github.event.inputs.release_tag }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Attach assets to GitHub Release
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || github.event.inputs.release_tag != ''
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.release_tag.outputs.tag }}
           files: |
             dist/SatelliteUpscale-${{ matrix.platform }}*
             dist/SHA256SUMS-${{ matrix.platform }}.txt
